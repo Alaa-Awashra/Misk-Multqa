@@ -36,6 +36,9 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
     );
   }, [open, supervisor]);
 
+  // مشرف التسجيل والقبول: حساب بصلاحيات القبول فقط (يُنشأ عبر /staff) ولا يحتاج بقية الحقول
+  const isRegistrar = !editing && f.supervisor_type === 'registrar';
+
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const submit = async (e) => {
@@ -44,7 +47,11 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
     setError('');
     setBusy(true);
     try {
-      const res = editing ? await api.put(`/supervisors/${supervisor.id}`, f) : await api.post('/supervisors', f);
+      const res = editing
+        ? await api.put(`/supervisors/${supervisor.id}`, f)
+        : isRegistrar
+          ? { ...(await api.post('/staff', { full_name: f.full_name, phone: f.phone, email: f.email })), registrar: true }
+          : await api.post('/supervisors', f);
       if (editing) toast.success('تم حفظ التعديلات');
       onSaved?.(res);
       onClose();
@@ -81,7 +88,9 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
           <Field
             label="نوع المشرف"
             required
-            hint="يحدد واجهته: مشرف (طلاب ذكور) / مشرفة (طالبات) / مشرف كيدز (أطفال)"
+            hint={isRegistrar
+              ? 'صلاحياته: نماذج التسجيل ومراجعة طلبات الالتحاق وقبولها فقط — لا وصول للطلاب أو التحليلات'
+              : 'يحدد واجهته: مشرف (طلاب ذكور) / مشرفة (طالبات) / مشرف كيدز (أطفال) / مشرف تسجيل وقبول'}
             className="full"
           >
             {(id) => (
@@ -92,15 +101,17 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
                     {t.label}
                   </option>
                 ))}
+                {!editing && <option value="registrar">مشرف تسجيل وقبول</option>}
               </select>
             )}
           </Field>
           <Field label="رقم الهاتف">
             {(id) => <input id={id} className="input ltr" inputMode="tel" value={f.phone} onChange={set('phone')} maxLength={30} />}
           </Field>
-          <Field label="البريد الإلكتروني">
-            {(id) => <input id={id} className="input ltr" type="email" value={f.email} onChange={set('email')} maxLength={150} />}
+          <Field label="البريد الإلكتروني" required hint={editing ? 'تغيير البريد يتطلب تأكيدًا جديدًا من المشرف' : 'يُرسل إليه رابط لتأكيد ملكيته'}>
+            {(id) => <input id={id} className="input ltr" type="email" value={f.email} onChange={set('email')} maxLength={150} required />}
           </Field>
+          {!isRegistrar && (<>
           <Field label="تاريخ الميلاد">
             {(id) => <input id={id} className="input" type="date" value={f.birth_date} onChange={set('birth_date')} />}
           </Field>
@@ -119,6 +130,7 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
           <Field label="ملاحظات" className="full">
             {(id) => <textarea id={id} className="textarea" value={f.notes} onChange={set('notes')} maxLength={1000} />}
           </Field>
+          </>)}
         </div>
       </form>
     </Modal>

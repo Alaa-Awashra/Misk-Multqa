@@ -4,10 +4,11 @@ import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { Alert, Avatar, Badge, Field, PageHeader, Spinner } from '../components/ui.jsx';
-import { supervisorTypeLabel } from '../lib/labels.js';
+import { roleLabel } from '../lib/labels.js';
 
 export default function Profile() {
-  const { isAdmin, refreshUser } = useAuth();
+  const { user, isAdmin, refreshUser } = useAuth();
+  const [verifyBusy, setVerifyBusy] = useState(false);
   const toast = useToast();
   const { data, loading, error, reload } = useLoad(() => api.get('/profile'), []);
   const [f, setF] = useState(null);
@@ -35,8 +36,8 @@ export default function Profile() {
     setBusy(true);
     setFormError('');
     try {
-      await api.put('/profile', f);
-      toast.success('تم حفظ المعلومات');
+      const r = await api.put('/profile', f);
+      toast.success(r.email_changed ? 'تم الحفظ — أرسلنا رابط تأكيد إلى بريدك الجديد' : 'تم حفظ المعلومات');
       await refreshUser();
       reload();
     } catch (err) {
@@ -62,26 +63,55 @@ export default function Profile() {
     }
   };
 
+  const resendVerification = async () => {
+    setVerifyBusy(true);
+    try {
+      const r = await api.post('/profile/email/verify');
+      if (r.already) toast.info('بريدك مؤكد بالفعل');
+      else if (r.delivery_operational) toast.success('أرسلنا رابط التأكيد إلى بريدك');
+      else toast.info('تم إنشاء رابط التأكيد، لكن إرسال البريد غير مُفعّل بعد من الإدارة. تواصل مع الإدارة لتأكيده يدويًا.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
   return (
     <>
       <PageHeader title="ملفي الشخصي" subtitle="عدّل معلوماتك وكلمة مرورك" />
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
         <form className="card" onSubmit={save}>
-          <div className="row" style={{ marginBottom: 16 }}>
-            <Avatar name={p.full_name} size={56} />
-            <div>
+          <div className="profile-head">
+            <Avatar name={p.full_name} size={60} />
+            <div className="profile-id">
               <h2>{p.full_name}</h2>
-              <div className="row">
-                <Badge tone="primary">{isAdmin ? 'المسؤول الإداري' : supervisorTypeLabel(p.supervisor_type)}</Badge>
-                <span className="muted small" dir="ltr">@{p.username}</span>
+              <div className="profile-meta">
+                <Badge tone="primary">{roleLabel(user)}</Badge>
+                <span className="profile-user" dir="ltr">@{p.username}</span>
               </div>
             </div>
           </div>
           {formError && <Alert tone="danger">{formError}</Alert>}
+          {p.email && !p.email_verified_at && (
+            <Alert tone="warn">
+              بريدك <b dir="ltr">{p.email}</b> غير مؤكد.{' '}
+              <button type="button" className="btn btn-sm btn-ghost" onClick={resendVerification} disabled={verifyBusy}>
+                {verifyBusy ? 'جارٍ الإرسال…' : 'إرسال رابط التأكيد'}
+              </button>
+              {!p.email_delivery_operational && <div className="small" style={{ marginTop: 6 }}>ملاحظة: إرسال البريد غير مُفعّل حاليًا على الخادم، يمكن للإدارة تأكيد بريدك يدويًا.</div>}
+            </Alert>
+          )}
           <Field label="الاسم الكامل" required>{(id) => <input id={id} className="input" value={f.full_name} onChange={set('full_name')} required maxLength={120} />}</Field>
           <div className="form-grid">
             <Field label="رقم الهاتف">{(id) => <input id={id} className="input ltr" value={f.phone} onChange={set('phone')} inputMode="tel" maxLength={30} />}</Field>
-            <Field label="البريد الإلكتروني">{(id) => <input id={id} className="input ltr" type="email" value={f.email} onChange={set('email')} maxLength={150} />}</Field>
+            <Field
+              label="البريد الإلكتروني"
+              required={!isAdmin}
+              hint={p.email ? (p.email_verified_at ? '✓ مؤكد' : 'غير مؤكد — تغيير البريد يتطلب تأكيدًا جديدًا') : 'إلزامي لاستلام إشعارات الإدارة'}
+            >
+              {(id) => <input id={id} className="input ltr" type="email" value={f.email} onChange={set('email')} maxLength={150} required={!isAdmin} />}
+            </Field>
             {!isAdmin && (
               <>
                 <Field label="تاريخ الميلاد">{(id) => <input id={id} className="input" type="date" value={f.birth_date} onChange={set('birth_date')} />}</Field>

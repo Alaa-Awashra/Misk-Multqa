@@ -25,3 +25,20 @@ services:
         generateValue: true
       - key: CREDENTIALS_KEY
         generateValue: true
+      # المهام المجدولة: انسخ القيمة المولّدة إلى database/supabase_cron.sql
+      - key: CRON_SECRET
+        generateValue: true
+      # البريد (Resend) — يبقى معطّلًا حتى توثيق النطاق
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false          # مثال: noreply@your-verified-domain.com
+      - key: EMAIL_REPLY_TO
+        value: misk.quran26@gmail.com
+      # Google Forms / Sheets
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

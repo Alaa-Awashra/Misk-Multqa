@@ -9,6 +9,7 @@ import StudentForm from '../components/StudentForm.jsx';
 import { CredentialsDialog } from './Supervisors.jsx';
 import { ACTION_LABEL, actionTone, genderLabel, supervisorTypeLabel } from '../lib/labels.js';
 import { fmtDate, fmtDateTime, fmtNum, fmtIso, age } from '../lib/format.js';
+import { ComplianceNow, ReviewHistory } from '../components/Compliance.jsx';
 
 export default function SupervisorDetail() {
   const { id } = useParams();
@@ -16,6 +17,8 @@ export default function SupervisorDetail() {
   const toast = useToast();
   const { data, loading, error, reload } = useLoad(() => api.get(`/supervisors/${id}`), [id]);
   const { data: allSups } = useLoad(() => api.get('/supervisors'), []);
+  const { data: comp, reload: reloadComp } = useLoad(() => api.get(`/supervisors/${id}/compliance`), [id]);
+  const [revoke, setRevoke] = useState(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [addStudent, setAddStudent] = useState(false);
@@ -26,7 +29,8 @@ export default function SupervisorDetail() {
 
   if (loading && !data) return <Spinner />;
   if (error) return <Alert tone="danger">{error}</Alert>;
-  const { supervisor: s, credentials, students, month, history } = data;
+  const { supervisor: s, credentials, students, month, history, warnings = [] } = data;
+  const activeWarnings = warnings.filter((w) => w.status === 'active');
   const suspended = s.status === 'suspended';
   const others = (allSups?.supervisors || []).filter((x) => x.id !== s.id && x.status === 'active');
 
@@ -68,6 +72,18 @@ export default function SupervisorDetail() {
         <Alert tone="warn">
           هذا المشرف مفصول منذ {fmtDate(s.suspended_at)}
           {s.suspension_reason ? ` — السبب: ${s.suspension_reason}` : ''}. لا يستطيع الدخول للنظام، ويمكنك إعادة تفعيله في أي وقت.
+          {s.dismissed_by_policy && students.length > 0 && <div style={{ marginTop: 6 }}>أُوقف تلقائيًا بسبب التحذيرات. طلابه محفوظون — يمكنك نقلهم من صفحة كل طالب أو عند حذف المشرف. قبل إعادة تفعيله، ألغِ التحذيرات الخاطئة إن وُجدت.</div>}
+        </Alert>
+      )}
+      {!s.email_verified_at && (
+        <Alert tone="warn">
+          {s.email ? <>بريد المشرف <b dir="ltr">{s.email}</b> غير مؤكد — لن تصله إشعارات البريد.</> : 'لا يوجد بريد للمشرف — البريد إلزامي، أضفه من «تعديل».'}{' '}
+          {s.email && (
+            <>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={async () => { try { const r = await api.post(`/supervisors/${s.id}/resend-verification`); toast.success(r.queued ? 'أُرسل رابط التأكيد' : 'أُنشئ رابط التأكيد لكن البريد غير مُفعّل على الخادم'); } catch (e) { toast.error(e.message); } }}>إعادة إرسال رابط التأكيد</button>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => { setReason(''); setDialog('verify'); }}>تأكيد يدوي</button>
+            </>
+          )}
         </Alert>
       )}
 
@@ -97,7 +113,7 @@ export default function SupervisorDetail() {
           <div className="card-head"><h2>المعلومات الشخصية</h2></div>
           <dl className="kv">
             <dt>الهاتف</dt><dd dir="ltr" style={{ textAlign: 'right' }}>{s.phone || '—'}</dd>
-            <dt>البريد</dt><dd dir="ltr" style={{ textAlign: 'right' }}>{s.email || '—'}</dd>
+            <dt>البريد</dt><dd><span dir="ltr">{s.email || '—'}</span> {s.email && (s.email_verified_at ? <Badge tone="success">مؤكد</Badge> : <Badge tone="warn">غير مؤكد</Badge>)}</dd>
             <dt>تاريخ الميلاد</dt><dd>{s.birth_date ? `${fmtIso(s.birth_date)} (${age(s.birth_date)} سنة)` : '—'}</dd>
             <dt>رقم الهوية</dt><dd>{s.national_id || '—'}</dd>
             <dt>المؤهل</dt><dd>{s.qualification || '—'}</dd>
@@ -152,6 +168,41 @@ export default function SupervisorDetail() {
         )}
       </div>
 
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2><Icon name="alert" size={17} /> التحذيرات الرسمية ({activeWarnings.length} ساري)</h2>
+          {!suspended && <button className="btn btn-sm btn-warn" type="button" onClick={() => { setReason(''); setTransferTo(''); setDialog('warn'); }}><Icon name="plus" size={15} /> إصدار تحذير</button>}
+        </div>
+        {warnings.length === 0 ? <p className="muted">لا توجد تحذيرات.</p> : (
+          <ul className="list-plain">
+            {warnings.map((w) => (
+              <li key={w.id} style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <b>{w.reason}</b> {w.source === 'compliance' && <Badge tone="info">متابعة آلية</Badge>}
+                  {w.notes && <div className="small muted" style={{ whiteSpace: 'pre-line' }}>{w.notes}</div>}
+                  <div className="small muted">{fmtDateTime(w.created_at)} • {w.issued_by_name}</div>
+                  {w.status === 'revoked' && <div className="small">أُلغي بواسطة {w.revoked_by_name} في {fmtDateTime(w.revoked_at)}{w.revoke_reason ? ` — ${w.revoke_reason}` : ''}</div>}
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <Badge tone={w.status === 'active' ? 'danger' : 'muted'}>{w.status === 'active' ? 'ساري' : 'ملغى'}</Badge>
+                  {w.status === 'active' && <button className="btn btn-sm btn-ghost" type="button" onClick={() => { setReason(''); setRevoke(w); }}>إلغاء</button>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head"><h2><Icon name="shield" size={17} /> متابعة اكتمال السجلات</h2>{comp && <span className="small muted">{comp.violations_in_window} مخالفة خلال {comp.config.lookbackDays} يومًا</span>}</div>
+        {!comp ? <Spinner /> : (
+          <>
+            <ComplianceNow data={comp} />
+            <div style={{ marginTop: 14 }}><ReviewHistory reviews={comp.reviews} /></div>
+          </>
+        )}
+      </div>
+
       <div className="card">
         <div className="card-head"><h2>سجل المشرف</h2></div>
         {history.length === 0 ? (
@@ -190,6 +241,40 @@ export default function SupervisorDetail() {
         <Field label="سبب الفصل (اختياري)">
           {(fid) => <textarea id={fid} className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} style={{ minHeight: 60 }} />}
         </Field>
+      </ConfirmDialog>
+
+      <ConfirmDialog open={dialog === 'warn'} onClose={close} tone="warn" title="إصدار تحذير إداري رسمي" confirmText="إصدار التحذير" disabled={!reason.trim()}
+        onConfirm={async () => {
+          const r = await api.post(`/supervisors/${s.id}/warnings`, { reason, notes: transferTo });
+          toast[r.dismissed ? 'error' : 'success'](r.dismissed ? `أُصدر التحذير وأُوقف المشرف تلقائيًا (${r.active_warnings} تحذيرات سارية)` : `أُصدر التحذير (${r.active_warnings} من ${r.threshold}) وأُبلغ المشرف`);
+          close();
+          reload();
+          reloadComp();
+        }}>
+        {activeWarnings.length > 0 && (
+          <Alert tone="danger">لدى المشرف {activeWarnings.length} تحذير ساري. إن بلغ العدد حد الإيقاف المعتمد في الإعدادات فسيُوقف تلقائيًا.</Alert>
+        )}
+        <Field label="سبب التحذير" required>{(fid) => <textarea id={fid} className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} />}</Field>
+        <Field label="ملاحظات داعمة (اختياري)">{(fid) => <textarea id={fid} className="textarea" style={{ minHeight: 50 }} value={transferTo} onChange={(e) => setTransferTo(e.target.value)} maxLength={2000} />}</Field>
+        <p className="small muted">يصل التحذير للمشرف في لوحته وعلى بريده (إن كان مؤكدًا)، ويُسجَّل في سجل النشاط.</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog open={!!revoke} onClose={() => setRevoke(null)} tone="primary" title="إلغاء تحذير" confirmText="إلغاء التحذير" disabled={!reason.trim()}
+        onConfirm={async () => {
+          await api.post(`/supervisors/${s.id}/warnings/${revoke.id}/revoke`, { reason });
+          toast.success('أُلغي التحذير وبقي في السجل');
+          setRevoke(null);
+          reload();
+        }}>
+        <p>«{revoke?.reason}»</p>
+        <Field label="سبب الإلغاء" required>{(fid) => <textarea id={fid} className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} />}</Field>
+        {suspended && s.dismissed_by_policy && <p className="small muted">إلغاء التحذير لا يعيد تفعيل المشرف تلقائيًا — استخدم «إعادة تفعيل» بعد ذلك إن رغبت.</p>}
+      </ConfirmDialog>
+
+      <ConfirmDialog open={dialog === 'verify'} onClose={close} tone="primary" title="تأكيد البريد يدويًا" confirmText="تأكيد" disabled={!reason.trim()}
+        onConfirm={async () => { await api.post(`/supervisors/${s.id}/verify-email`, { note: reason }); toast.success('تم تأكيد البريد'); close(); reload(); }}>
+        <p>استخدم هذا فقط إن تحققت الإدارة من ملكية البريد بطريقة أخرى. يُسجَّل الإجراء في سجل النشاط.</p>
+        <Field label="كيف تم التحقق؟" required>{(fid) => <input id={fid} className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="مثال: أكده المشرف شخصيًا في الاجتماع" />}</Field>
       </ConfirmDialog>
 
       {/* إعادة تفعيل */}

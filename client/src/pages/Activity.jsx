@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, qs } from '../api.js';
-import { Alert, Empty, PageHeader, Spinner } from '../components/ui.jsx';
+import { Alert, Dropdown, Empty, PageHeader, Spinner } from '../components/ui.jsx';
 import { ACTION_LABEL, actionTone } from '../lib/labels.js';
 import { fmtDateTime } from '../lib/format.js';
 
@@ -40,11 +40,9 @@ export default function ActivityPage() {
 
   return (
     <>
-      <PageHeader title="سجل النشاط" subtitle="كل ما جرى في النظام: من فعل ماذا ومتى" />
+      <PageHeader title="سجل النشاط" />
       <div className="toolbar">
-        <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
-          {FILTERS.map((f) => (<option key={f.value} value={f.value}>{f.label}</option>))}
-        </select>
+        <Dropdown label="نوع النشاط" icon="activity" value={type} onChange={setType} options={FILTERS} />
       </div>
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="card">

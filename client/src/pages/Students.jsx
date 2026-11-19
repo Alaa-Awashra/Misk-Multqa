@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Avatar, Badge, Empty, Icon, PageHeader, ProgressBar, Spinner, Tabs } from '../components/ui.jsx';
+import { Alert, Avatar, Badge, Empty, Dropdown, Icon, PageHeader, ProgressBar, Spinner, Tabs } from '../components/ui.jsx';
 import StudentForm from '../components/StudentForm.jsx';
-import { genderLabel } from '../lib/labels.js';
+import { GROUP_LABEL, genderLabel } from '../lib/labels.js';
 import { fmtIso, fmtNum, norm, relativeDays } from '../lib/format.js';
 import { downloadCsv } from '../lib/csv.js';
 
@@ -18,14 +18,13 @@ export default function Students() {
   const [tab, setTab] = useState('active');
   const [q, setQ] = useState('');
   const [supFilter, setSupFilter] = useState('');
-  const [gender, setGender] = useState('');
+  const [category, setCategory] = useState('');
   const [formOpen, setFormOpen] = useState(false);
 
   const all = data?.students || [];
   const counts = useMemo(
     () => ({
       active: all.filter((s) => s.status === 'active').length,
-      warning: all.filter((s) => s.status === 'active' && s.warning).length,
       suspended: all.filter((s) => s.status === 'suspended').length,
       none: all.filter((s) => !s.supervisor_id).length,
     }),
@@ -36,15 +35,15 @@ export default function Students() {
     () =>
       all.filter((s) => {
         if (tab === 'active' && s.status !== 'active') return false;
-        if (tab === 'warning' && !(s.status === 'active' && s.warning)) return false;
         if (tab === 'suspended' && s.status !== 'suspended') return false;
         if (tab === 'none' && s.supervisor_id) return false;
         if (supFilter && s.supervisor_id !== supFilter) return false;
-        if (gender && s.gender !== gender) return false;
+        // الفئة: للمسؤول = فئة المشرف (ذكور/إناث/كيدز)، ولمشرف الكيدز = جنس الطفل
+        if (category && (isAdmin ? s.supervisor_type : s.gender) !== category) return false;
         if (q && !norm(s.full_name).includes(norm(q)) && !(s.phone || '').includes(q.trim())) return false;
         return true;
       }),
-    [all, tab, q, supFilter, gender]
+    [all, tab, q, supFilter, category, isAdmin]
   );
 
   const exportCsv = () =>
@@ -64,7 +63,6 @@ export default function Students() {
 
   const tabs = [
     { value: 'active', label: 'النشطون', count: counts.active },
-    { value: 'warning', label: 'تحت التحذير', count: counts.warning },
     { value: 'suspended', label: 'المفصولون', count: counts.suspended },
     ...(isAdmin && counts.none ? [{ value: 'none', label: 'بلا مشرف', count: counts.none }] : []),
     { value: 'all', label: 'الكل', count: all.length },
@@ -91,19 +89,33 @@ export default function Students() {
           <input className="input" placeholder={`ابحث باسم ${n.the} أو رقم الهاتف…`} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         {isAdmin && (
-          <select className="select" value={supFilter} onChange={(e) => setSupFilter(e.target.value)}>
-            <option value="">كل المشرفين</option>
-            {(sups?.supervisors || []).map((s) => (
-              <option key={s.id} value={s.id}>{s.full_name}</option>
-            ))}
-          </select>
+          <Dropdown
+            label="المشرف"
+            icon="users"
+            value={supFilter}
+            onChange={setSupFilter}
+            searchable={(sups?.supervisors || []).length > 7}
+            options={[
+              { value: '', label: 'كل المشرفين' },
+              ...(sups?.supervisors || []).map((s) => ({ value: s.id, label: s.full_name, hint: GROUP_LABEL[s.supervisor_type] })),
+            ]}
+          />
         )}
         {(isAdmin || n.one === 'طفل') && (
-          <select className="select" value={gender} onChange={(e) => setGender(e.target.value)}>
-            <option value="">الجنسان</option>
-            <option value="male">ذكور</option>
-            <option value="female">إناث</option>
-          </select>
+          <Dropdown
+            label="الفئة"
+            icon="sliders"
+            value={category}
+            onChange={setCategory}
+            options={[
+              { value: '', label: 'كل الفئات' },
+              ...(isAdmin ? ['male', 'female', 'kids'] : ['male', 'female']).map((v) => ({
+                value: v,
+                label: GROUP_LABEL[v],
+                hint: all.filter((s) => (isAdmin ? s.supervisor_type : s.gender) === v).length,
+              })),
+            ]}
+          />
         )}
       </div>
 
@@ -173,6 +185,9 @@ export default function Students() {
                           <Badge tone="warn" title={s.warning_reasons.join(' • ')}>تحت التحذير</Badge>
                         ) : (
                           <Badge tone="success">منتظم</Badge>
+                        )}
+                        {s.pending_request && (
+                          <> <Badge tone="info" title="بانتظار قرار الإدارة">طلب {s.pending_request === 'removal' ? 'حذف' : 'فصل'} معلّق</Badge></>
                         )}
                       </td>
                     </tr>

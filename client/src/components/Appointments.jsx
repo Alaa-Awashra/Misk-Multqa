@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, qs } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
-import { Alert, Badge, ConfirmDialog, Field, Modal } from './ui.jsx';
+import { Alert, Badge, ConfirmDialog, Field, Icon, Modal } from './ui.jsx';
 import { SURAHS } from '../lib/surahs.js';
 import { APPT_STATUS, KIND_LABEL, RECITATION_TYPE_LABEL } from '../lib/labels.js';
-import { fmtDate, fmtTime, fmtWeekday, localHM, localISODate, toISO } from '../lib/format.js';
+import { fmtDate, fmtTime, fmtWeekday, localHM, localISODate, norm, toISO } from '../lib/format.js';
 
 const durationOf = (a) => Math.round((new Date(a.end_at) - new Date(a.start_at)) / 60000);
 
@@ -54,6 +54,10 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
       const kind = initial.kind || 'recitation';
       setF({
         student_id: initial.student_id || '',
+        student_ids: initial.student_id ? [initial.student_id] : [],
+        join_session_id: initial.join_session_id || null,
+        recur: 'none',
+        recur_count: '4',
         kind,
         recitation_type: 'new',
         surah: '',
@@ -71,6 +75,14 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
   }, [open, appointment]);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const [pick, setPick] = useState('');
+  const multi = !editing && !f.past;
+  const toggleStudent = (id) =>
+    setF((x) => {
+      const ids = x.student_ids || [];
+      const next = ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id];
+      return { ...x, student_ids: next, student_id: next[0] || '' };
+    });
 
   const setKind = (kind) =>
     setF((x) => ({ ...x, kind, duration: String(kind === 'exam' ? settings.exam_minutes : settings.recitation_minutes) }));
@@ -79,8 +91,8 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
   useEffect(() => {
     if (!open || !f.date) return undefined;
     let alive = true;
-    const from = new Date(`${f.date}T00:00:00`).toISOString();
-    const to = new Date(`${f.date}T23:59:59`).toISOString();
+    const from = toISO(f.date, '00:00');
+    const to = toISO(f.date, '23:59');
     api
       .get(`/appointments${qs({ from, to })}`)
       .then((d) => alive && setDayAppts(d.appointments.filter((a) => a.status === 'scheduled' && a.id !== appointment?.id)))
@@ -90,18 +102,20 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
     };
   }, [open, f.date, appointment?.id]);
 
-  const start = f.date && f.time ? new Date(`${f.date}T${f.time}:00`) : null;
+  const start = f.date && f.time ? new Date(toISO(f.date, f.time)) : null;
   const dur = Number(f.duration) || 0;
   const end = start && dur ? new Date(start.getTime() + dur * 60000) : null;
   const overlapIds = new Set(
     start && end ? dayAppts.filter((a) => new Date(a.start_at) < end && new Date(a.end_at) > start).map((a) => a.id) : []
   );
-  const studentBusy = dayAppts.some((a) => overlapIds.has(a.id) && a.student_id === f.student_id);
+  const chosen = multi ? f.student_ids || [] : [f.student_id];
+  const studentBusy = dayAppts.some((a) => overlapIds.has(a.id) && chosen.includes(a.student_id));
+  const joinSessionConflict = (a) => f.join_session_id && a.session_id === f.join_session_id;
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!f.student_id) return setError(`اختر ${n.the}`);
+    if (multi ? !(f.student_ids || []).length : !f.student_id) return setError(`اختر ${n.the}`);
     if (f.kind === 'exam' && !f.surah) return setError('اختر السورة التي سيُمتحن فيها');
     if (!start) return setError('حدد التاريخ والوقت');
     setBusy(true);
@@ -120,7 +134,9 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
         toast.success('تم تعديل الموعد');
       } else {
         const body = {
-          student_id: f.student_id,
+          ...(multi ? { student_ids: f.student_ids } : { student_id: f.student_id }),
+          ...(f.join_session_id ? { join_session_id: f.join_session_id } : {}),
+          ...(multi && !f.join_session_id && f.recur !== 'none' ? { recurrence: { freq: f.recur, count: Number(f.recur_count) || 1 } } : {}),
           kind: f.kind,
           surah: f.surah,
           portion: f.portion,
@@ -137,7 +153,7 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
           if (f.kind === 'exam' && f.grade === '') throw new Error('أدخل علامة الامتحان');
         }
         res = await api.post('/appointments', body);
-        toast.success(f.past ? 'تم تسجيل الموعد السابق' : 'تم حجز الموعد');
+        toast.success(f.past ? 'تم تسجيل الموعد السابق' : res.created > 1 ? `تم حجز ${res.created} موعدًا` : 'تم حجز الموعد');
       }
       onSaved?.(res.appointment);
       onClose();
@@ -169,18 +185,41 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
       <form id="appt-form" onSubmit={submit}>
         {error && <Alert tone="danger">{error}</Alert>}
 
-        <Field label={n.the} required>
-          {(id) => (
-            <select id={id} className="select" value={f.student_id || ''} onChange={set('student_id')} disabled={editing} required>
-              <option value="">— اختر —</option>
-              {(editing ? students : activeStudents).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
+        {multi ? (
+          <div className="field">
+            <span className="field-label">
+              {n.many} في الجلسة <b className="req">*</b> <span className="muted small">— اختر طالبًا أو أكثر (جلسة جماعية في نفس الوقت)</span>
+            </span>
+            <input className="input" placeholder="بحث بالاسم" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="بحث عن طالب" />
+            <div className="pick-list" role="group" aria-label={n.many}>
+              {activeStudents
+                .filter((st) => !pick || norm(st.full_name).includes(norm(pick)))
+                .map((st) => (
+                  <label key={st.id} className="check">
+                    <input type="checkbox" checked={(f.student_ids || []).includes(st.id)} onChange={() => toggleStudent(st.id)} /> {st.full_name}
+                  </label>
+                ))}
+            </div>
+            <span className="field-hint">
+              المختارون: {(f.student_ids || []).length}
+              {(f.student_ids || []).length > 1 && ' — ستُنشأ جلسة جماعية واحدة تظهر في التقويم كحدث واحد مع قائمة الطلاب'}
+            </span>
+          </div>
+        ) : (
+          <Field label={n.the} required>
+            {(id) => (
+              <select id={id} className="select" value={f.student_id || ''} onChange={set('student_id')} disabled={editing} required>
+                <option value="">— اختر —</option>
+                {(editing ? students : activeStudents).map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.full_name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        )}
+        {f.join_session_id && <Alert tone="info">سيُضاف المختارون إلى الجلسة القائمة بنفس وقتها ومدتها.</Alert>}
 
         <div className="field">
           <span className="field-label">نوع الموعد</span>
@@ -241,8 +280,27 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
             {(id) => <input id={id} className="input" type="time" step="300" value={f.time || ''} onChange={set('time')} required />}
           </Field>
           <Field label="المدة (دقيقة)" required>
-            {(id) => <input id={id} className="input" type="number" min="5" max="240" step="5" value={f.duration || ''} onChange={set('duration')} required />}
+            {(id) => <input id={id} className="input" type="number" min="5" max="240" step="5" value={f.duration || ''} onChange={set('duration')} required disabled={!!f.join_session_id} />}
           </Field>
+          {multi && !f.join_session_id && (
+            <>
+              <Field label="التكرار">
+                {(id) => (
+                  <select id={id} className="select" value={f.recur} onChange={set('recur')}>
+                    <option value="none">بدون تكرار</option>
+                    <option value="daily">يوميًا</option>
+                    <option value="weekly">أسبوعيًا</option>
+                    <option value="biweekly">كل أسبوعين</option>
+                  </select>
+                )}
+              </Field>
+              {f.recur !== 'none' && (
+                <Field label="عدد المرات" hint="بنفس الساعة بتوقيت فلسطين">
+                  {(id) => <input id={id} className="input" type="number" min="2" max="26" value={f.recur_count} onChange={set('recur_count')} />}
+                </Field>
+              )}
+            </>
+          )}
         </div>
 
         {f.past && (
@@ -270,16 +328,16 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
             ) : (
               <ul className="list-plain" style={{ marginTop: 4 }}>
                 {dayAppts.map((a) => (
-                  <li key={a.id} className={overlapIds.has(a.id) ? 'conflict' : ''} style={{ padding: '3px 0' }}>
+                  <li key={a.id} className={overlapIds.has(a.id) && !joinSessionConflict(a) ? 'conflict' : ''} style={{ padding: '3px 0' }}>
                     <span>
                       {fmtTime(a.start_at)} – {fmtTime(a.end_at)} • {a.student_name} ({KIND_LABEL[a.kind]})
                     </span>
-                    {overlapIds.has(a.id) && <span>⚠ تعارض</span>}
+                    {overlapIds.has(a.id) && !joinSessionConflict(a) && <span>⚠ تعارض</span>}
                   </li>
                 ))}
               </ul>
             )}
-            {overlapIds.size > 0 && (
+            {overlapIds.size > 0 && !f.join_session_id && (
               <div className="conflict" style={{ marginTop: 6 }}>
                 {studentBusy ? `لدى ${n.the} موعد آخر في هذا الوقت.` : 'الوقت المختار يتعارض مع موعد آخر لك.'}
               </div>
@@ -294,7 +352,7 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
 // =====================================================================
 // تفاصيل الموعد + الإجراءات (تم / لم يلتزم / إعادة جدولة / إلغاء / حذف)
 // =====================================================================
-export function AppointmentDetail({ appointment: a, onClose, onChanged, onEdit, canManage }) {
+export function AppointmentDetail({ appointment: a, onClose, onChanged, onEdit, canManage, canCancel = false }) {
   const toast = useToast();
   const { settings } = useAuth();
   const [mode, setMode] = useState('view'); // view | complete
@@ -396,6 +454,8 @@ export function AppointmentDetail({ appointment: a, onClose, onChanged, onEdit, 
                 حذف
               </button>
             </>
+          ) : canCancel && mode === 'view' && a.status === 'scheduled' ? (
+            <button className="btn btn-ghost" onClick={() => setConfirm('cancel')} type="button">إلغاء الموعد</button>
           ) : null
         }
       >
@@ -466,6 +526,12 @@ export function AppointmentDetail({ appointment: a, onClose, onChanged, onEdit, 
                 </>
               )}
             </dl>
+            {(canManage || canCancel) && a.series_id && a.status === 'scheduled' && (
+              <button className="btn btn-sm btn-ghost" type="button" style={{ marginBottom: 8 }}
+                onClick={async () => { try { const r = await api.post(`/appointments/series/${a.series_id}/cancel`); toast.success(`أُلغي ${r.cancelled} موعد قادم في السلسلة`); onChanged?.(); onClose(); } catch (e) { setError(e.message); } }}>
+                <Icon name="repeat" size={14} /> إلغاء كل المواعيد القادمة في هذه السلسلة المتكررة
+              </button>
+            )}
             {canManage && a.status === 'scheduled' && !started && (
               <Alert tone="info">يمكنك تسجيل نتيجة الموعد (تم / لم يلتزم) بعد حلول وقته.</Alert>
             )}

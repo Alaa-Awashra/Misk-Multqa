@@ -3,11 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Badge, Empty, Field, Icon, PageHeader, ProgressBar, Spinner, StatCard, Tabs } from '../components/ui.jsx';
+import { GROUP_LABEL, supervisorTypeLabel } from '../lib/labels.js';
+import { Alert, Badge, Dropdown, Empty, Field, Icon, PageHeader, ProgressBar, Spinner, StatCard, Tabs } from '../components/ui.jsx';
 import { BRAND } from '../lib/brand.js';
 import { downloadCsv } from '../lib/csv.js';
 import { fmtIso, fmtNum, lastMonthRange, localISODate, monthStartISO } from '../lib/format.js';
-import { supervisorTypeLabel } from '../lib/labels.js';
+
 
 function PeriodPicker({ from, to, setFrom, setTo }) {
   return (
@@ -45,11 +46,14 @@ function Monthly({ from, to, supervisors }) {
     <>
       {isAdmin && (
         <div className="toolbar no-print">
-          <select className="select" value={sup} onChange={(e) => setSup(e.target.value)}>
-            {supervisors.map((s) => (
-              <option key={s.id} value={s.id}>{s.full_name}</option>
-            ))}
-          </select>
+          <Dropdown
+            label="المشرف"
+            icon="users"
+            value={sup}
+            onChange={setSup}
+            searchable={supervisors.length > 7}
+            options={supervisors.map((s) => ({ value: s.id, label: s.full_name, hint: GROUP_LABEL[s.supervisor_type] }))}
+          />
         </div>
       )}
       {isAdmin && supervisors.length === 0 ? (
@@ -117,10 +121,14 @@ function Warnings({ supervisors }) {
     <>
       {isAdmin && (
         <div className="toolbar">
-          <select className="select" value={sup} onChange={(e) => setSup(e.target.value)}>
-            <option value="">كل المشرفين</option>
-            {supervisors.map((s) => (<option key={s.id} value={s.id}>{s.full_name}</option>))}
-          </select>
+          <Dropdown
+            label="المشرف"
+            icon="users"
+            value={sup}
+            onChange={setSup}
+            searchable={supervisors.length > 7}
+            options={[{ value: '', label: 'كل المشرفين' }, ...supervisors.map((s) => ({ value: s.id, label: s.full_name, hint: GROUP_LABEL[s.supervisor_type] }))]}
+          />
         </div>
       )}
       {loading && !data ? <Spinner /> : error ? <Alert tone="danger">{error}</Alert> : (
@@ -160,10 +168,14 @@ function Exams({ from, to, supervisors }) {
     <>
       {isAdmin && (
         <div className="toolbar">
-          <select className="select" value={sup} onChange={(e) => setSup(e.target.value)}>
-            <option value="">كل المشرفين</option>
-            {supervisors.map((s) => (<option key={s.id} value={s.id}>{s.full_name}</option>))}
-          </select>
+          <Dropdown
+            label="المشرف"
+            icon="users"
+            value={sup}
+            onChange={setSup}
+            searchable={supervisors.length > 7}
+            options={[{ value: '', label: 'كل المشرفين' }, ...supervisors.map((s) => ({ value: s.id, label: s.full_name, hint: GROUP_LABEL[s.supervisor_type] }))]}
+          />
         </div>
       )}
       {loading && !data ? <Spinner /> : error ? <Alert tone="danger">{error}</Alert> : (

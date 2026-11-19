@@ -19,11 +19,13 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [timezone, setTimezone] = useState('Asia/Hebron');
 
   const loadSettings = useCallback(async () => {
     try {
       const d = await api.get('/settings');
       setSettings({ ...DEFAULT_SETTINGS, ...d.settings });
+      if (d.timezone) setTimezone(d.timezone);
     } catch {
       /* الإعدادات الافتراضية */
     }
@@ -44,7 +46,13 @@ export function AuthProvider({ children }) {
 
   // لون الواجهة يتغير حسب نوع المستخدم
   useEffect(() => {
-    document.documentElement.dataset.theme = user ? (user.role === 'admin' ? 'admin' : user.supervisor_type) : 'admin';
+    document.documentElement.dataset.theme = user
+      ? user.role === 'admin'
+        ? 'admin'
+        : user.role === 'registrar'
+          ? 'registrar'
+          : user.supervisor_type
+      : 'admin';
   }, [user]);
 
   const login = useCallback(async (username, password) => {
@@ -77,9 +85,11 @@ export function AuthProvider({ children }) {
       refreshUser,
       isAdmin: user?.role === 'admin',
       isSupervisor: user?.role === 'supervisor',
+      isRegistrar: user?.role === 'registrar',
+      timezone,
       n: nouns(user?.role === 'supervisor' ? user.supervisor_type : null),
     }),
-    [user, loading, settings, loadSettings, login, logout, refreshUser]
+    [user, loading, settings, timezone, loadSettings, login, logout, refreshUser]
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

@@ -9,6 +9,20 @@ export const DEFAULT_SETTINGS = {
   recitation_minutes: 30,
   exam_minutes: 45,
   juz_pages: 20,
+  // التحذيرات الرسمية للمشرفين: عند بلوغ هذا العدد من التحذيرات السارية يُوقف المشرف تلقائيًا
+  supervisor_dismissal_warnings: 2,
+  // متابعة اكتمال السجلات
+  compliance_enabled: true,
+  compliance_period_days: 7,
+  compliance_anchor_date: '2026-01-03',
+  compliance_grace_days: 2,
+  compliance_min_records: 1,
+  compliance_warning_after: 2,
+  compliance_lookback_days: 90,
+  compliance_start_date: null,
+  // التقرير الدوري
+  report_period_days: 14,
+  report_anchor_date: '2026-01-03',
 };
 
 let cache = null;

@@ -30,6 +30,18 @@ const ICONS = {
   undo: <><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></>,
   chevron: <polyline points="15 18 9 12 15 6" />,
   repeat: <><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></>,
+  bell: <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
+  message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  megaphone: <><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z" /><path d="M16 8a5 5 0 0 1 0 8" /><path d="M19 5a9 9 0 0 1 0 14" /></>,
+  shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+  chart: <><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></>,
+  inbox: <><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>,
+  send: <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
+  link: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>,
+  refresh: <><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>,
+  mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></>,
+  clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /></>,
+  pin: <><line x1="12" y1="17" x2="12" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z" /></>,
   swap: <><polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" /><polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" /></>,
 };
 
@@ -343,6 +355,188 @@ export function BarChart({ data }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- مخطط خطي تفاعلي (SVG)
+// series: [{ key, label, color, values: number[] }] ، labels: string[]
+export function LineChart({ labels, series, height = 240, format = (v) => v }) {
+  const [hover, setHover] = useState(null);
+  const W = 640;
+  const H = height;
+  const P = { t: 16, r: 16, b: 34, l: 44 };
+  const all = series.flatMap((s) => s.values);
+  const max = Math.max(1, ...all);
+  const nice = Math.ceil(max / 4) * 4 || 4;
+  const x = (i) => P.l + (labels.length <= 1 ? (W - P.l - P.r) / 2 : (i * (W - P.l - P.r)) / (labels.length - 1));
+  const y = (v) => H - P.b - (v / nice) * (H - P.t - P.b);
+  if (!labels.length) return null;
+  return (
+    <div className="lchart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="مخطط الاتجاه" onMouseLeave={() => setHover(null)}>
+        {[0, 1, 2, 3, 4].map((k) => {
+          const v = (nice / 4) * k;
+          return (
+            <g key={k}>
+              <line x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} className="lchart-grid" />
+              <text x={P.l - 8} y={y(v) + 4} className="lchart-axis" textAnchor="end">{Math.round(v)}</text>
+            </g>
+          );
+        })}
+        {labels.map((l, i) => (
+          <text key={i} x={x(i)} y={H - 10} className="lchart-axis" textAnchor="middle">{l}</text>
+        ))}
+        {series.map((s) => (
+          <g key={s.key}>
+            <polyline fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
+              points={s.values.map((v, i) => `${x(i)},${y(v)}`).join(' ')} />
+            {s.values.map((v, i) => (
+              <circle key={i} cx={x(i)} cy={y(v)} r={hover === i ? 5 : 3.5} fill={s.color} stroke="#fff" strokeWidth="1.5" />
+            ))}
+          </g>
+        ))}
+        {labels.map((_, i) => (
+          <rect key={i} x={x(i) - (W - P.l - P.r) / Math.max(1, labels.length - 1) / 2} y={P.t} height={H - P.t - P.b}
+            width={(W - P.l - P.r) / Math.max(1, labels.length - 1)} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)} />
+        ))}
+        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={P.t} y2={H - P.b} className="lchart-cursor" />}
+      </svg>
+      <div className="lchart-legend">
+        {series.map((s) => (
+          <span key={s.key}><i style={{ background: s.color }} />{s.label}{hover !== null ? `: ${format(s.values[hover])}` : ''}</span>
+        ))}
+        {hover !== null && <span className="muted">— {labels[hover]}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- أعمدة أفقية تفاعلية
+// rows: [{ key, label, value, hint, color }]
+export function HBarChart({ rows, format = (v) => v, onSelect }) {
+  const max = Math.max(1, ...rows.map((r) => Math.abs(r.value || 0)));
+  return (
+    <div className="hbars">
+      {rows.map((r) => (
+        <button type="button" key={r.key} className="hbar" onClick={() => onSelect?.(r)} title={r.hint || `${r.label}: ${format(r.value)}`}>
+          <span className="hbar-label">{r.label}</span>
+          <span className="hbar-track">
+            <span className="hbar-fill" style={{ width: `${(Math.abs(r.value || 0) / max) * 100}%`, background: r.color || 'var(--primary)' }} />
+          </span>
+          <span className="hbar-val">{format(r.value)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** شارة عدد صغيرة للتنقل */
+export function CountBadge({ n }) {
+  if (!n) return null;
+  return <span className="count-badge">{n > 99 ? '99+' : n}</span>;
+}
+
+// ---------------------------------------------------------------- قائمة منسدلة للفلاتر
+/** بديل مريح لـ <select> في أشرطة الفلترة: options = [{ value, label, hint? }] */
+export function Dropdown({ value, onChange, options, icon, label, searchable = false, size, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  const listRef = useRef(null);
+  const listId = useId();
+  const current = options.find((o) => o.value === value) || options[0];
+  const shown = searchable && q ? options.filter((o) => String(o.label).includes(q.trim())) : options;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    setQ('');
+    setHi(Math.max(0, options.findIndex((o) => o.value === value)));
+    const close = (e) => !ref.current?.contains(e.target) && setOpen(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (open) listRef.current?.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [hi, open]);
+
+  // إن لم تتسع القائمة باتجاهها الطبيعي (قرب حافة الشاشة) تُحاذى من الطرف الآخر للزر
+  const popRef = useRef(null);
+  const [flip, setFlip] = useState(false);
+  useEffect(() => {
+    if (!open) return setFlip(false);
+    const r = popRef.current?.getBoundingClientRect();
+    if (r && (r.left < 8 || r.right > window.innerWidth - 8)) setFlip(true);
+    return undefined;
+  }, [open]);
+
+  const pick = (o) => {
+    onChange(o.value);
+    setOpen(false);
+  };
+  const onKey = (e) => {
+    if (!open) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(shown.length - 1, h + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(0, h - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) pick(shown[hi]); }
+    else if (e.key === 'Tab') setOpen(false);
+  };
+
+  const active = value !== options[0]?.value;
+  return (
+    <div className={`dd${size === 'sm' ? ' dd-sm' : ''}${open ? ' open' : ''}${className ? ` ${className}` : ''}`} ref={ref} onKeyDown={onKey}>
+      <button
+        type="button"
+        className={`dd-btn${active ? ' dd-active' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={label ? `${label}: ${current?.label}` : undefined}
+      >
+        {icon && <Icon name={icon} size={16} />}
+        <span className="dd-value">{current?.label}</span>
+        <span className="dd-caret" aria-hidden="true"><Icon name="chevron" size={14} /></span>
+      </button>
+      {open && (
+        <div className={`dd-pop${flip ? ' dd-flip' : ''}`} ref={popRef}>
+          {label && <div className="dd-title">{label}</div>}
+          {searchable && (
+            <div className="dd-search">
+              <Icon name="search" size={14} />
+              <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} placeholder="بحث…" aria-label="بحث في الخيارات" />
+            </div>
+          )}
+          <ul className="dd-list" role="listbox" id={listId} ref={listRef}>
+            {shown.length === 0 && <li className="dd-empty">لا نتائج</li>}
+            {shown.map((o, i) => (
+              <li
+                key={o.value}
+                data-i={i}
+                role="option"
+                aria-selected={o.value === value}
+                className={`${o.value === value ? 'sel' : ''}${i === hi ? ' hi' : ''}`}
+                onMouseEnter={() => setHi(i)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(o)}
+              >
+                <span className="dd-check" aria-hidden="true">{o.value === value && <Icon name="check" size={14} />}</span>
+                <span className="dd-label">{o.label}</span>
+                {o.hint != null && <span className="dd-hint">{o.hint}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

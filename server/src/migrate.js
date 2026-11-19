@@ -1,18 +1,12 @@
-// تشغيل: npm run migrate  — ينفذ database/schema.sql على قاعدة البيانات
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// تشغيل: npm run migrate  — ينفذ database/schema.sql ثم الترحيلات الجديدة في database/migrations
 import { pool } from './db.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const file = path.resolve(here, '../../database/schema.sql');
+import { runMigrations } from './migrations.js';
 
 try {
-  const sql = fs.readFileSync(file, 'utf8');
-  await pool.query(sql);
-  console.log('✅ تم تنفيذ schema.sql بنجاح');
+  const applied = await runMigrations(pool);
+  console.log(applied.length ? `✅ تم تطبيق ${applied.length} ترحيل` : '✅ قاعدة البيانات محدّثة — لا ترحيلات جديدة');
 } catch (err) {
-  console.error('❌ فشل تنفيذ schema.sql:', err.message);
+  console.error('❌ فشل الترحيل:', err.message);
   process.exitCode = 1;
 } finally {
   await pool.end();

@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { query } from '../db.js';
+import { allowRoles } from '../middleware/auth.js';
 import { config } from '../config.js';
 import { listStudents } from '../services/students.js';
 import { localDateStr, monthStart, rangeSql } from '../utils/tz.js';
 import { supervisorPerformance } from '../services/performance.js';
 
 const router = Router();
+// مشرف التسجيل لا يصل إلى لوحات الطلاب وتقاريرهم
+router.use(allowRoles('admin', 'supervisor'));
 
 router.get('/', async (req, res) => {
   const isAdmin = req.user.role === 'admin';

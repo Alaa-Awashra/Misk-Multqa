@@ -5,6 +5,8 @@ import { HttpError, forbidden } from '../utils/errors.js';
 
 export const COOKIE_NAME = 'mq_token';
 
+export const ROLES = ['admin', 'supervisor', 'registrar'];
+
 export function signToken(userId) {
   return jwt.sign({ sub: userId }, config.jwtSecret, { expiresIn: '7d' });
 }
@@ -21,12 +23,11 @@ export function setAuthCookie(res, token) {
 
 export const clearAuthCookie = (res) => res.clearCookie(COOKIE_NAME, { path: '/' });
 
-const USER_SQL = `
-  select u.id, u.username, u.role, u.full_name, u.phone, u.email,
+export const USER_SQL = `
+  select u.id, u.username, u.role, u.full_name, u.phone, u.email, u.email_verified_at, u.is_active,
          sp.id as supervisor_id, sp.supervisor_type, sp.status as supervisor_status
   from users u
-  left join supervisors sp on sp.user_id = u.id
-  where u.id = $1`;
+  left join supervisors sp on sp.user_id = u.id`;
 
 export function shapeUser(r) {
   return {
@@ -36,9 +37,18 @@ export function shapeUser(r) {
     full_name: r.full_name,
     phone: r.phone,
     email: r.email,
+    email_verified: !!r.email_verified_at,
     supervisor_id: r.supervisor_id || null,
     supervisor_type: r.supervisor_type || null,
   };
+}
+
+/** سبب منع الدخول (حساب موقوف/مفصول) أو null */
+export function accessBlockReason(u) {
+  if (u.is_active === false) return 'تم إيقاف حسابك. تواصل مع الإدارة.';
+  if (u.role === 'supervisor' && u.supervisor_status === 'suspended') return 'تم إيقاف حسابك. تواصل مع الإدارة.';
+  if (u.role === 'supervisor' && !u.supervisor_id) return 'الحساب غير مكتمل. تواصل مع الإدارة.';
+  return null;
 }
 
 /** يتحقق من الجلسة ويحمّل المستخدم في كل طلب (لضمان أثر الفصل/الحذف فورًا) */
@@ -54,18 +64,23 @@ export async function authenticate(req, res, next) {
     return next(new HttpError(401, 'انتهت الجلسة، يرجى تسجيل الدخول من جديد', 'UNAUTHENTICATED'));
   }
 
-  const { rows } = await query(USER_SQL, [payload.sub]);
+  const { rows } = await query(`${USER_SQL} where u.id = $1`, [payload.sub]);
   const user = rows[0];
   if (!user) return next(new HttpError(401, 'الحساب غير موجود', 'UNAUTHENTICATED'));
-  if (user.role === 'supervisor' && user.supervisor_status === 'suspended') {
-    return next(new HttpError(403, 'تم إيقاف حسابك. تواصل مع الإدارة.', 'SUSPENDED'));
-  }
+  const blocked = accessBlockReason(user);
+  if (blocked) return next(new HttpError(403, blocked, 'SUSPENDED'));
   req.user = { ...shapeUser(user) };
   next();
 }
+
+/** يسمح فقط للأدوار المحددة — يُطبَّق على مستوى الخادم لكل مسار محمي */
+export const allowRoles =
+  (...roles) =>
+  (req, res, next) =>
+    roles.includes(req.user?.role) ? next() : next(forbidden('ليست لديك صلاحية للوصول إلى هذه الصفحة'));
 
 export const requireAdmin = (req, res, next) =>
   req.user?.role === 'admin' ? next() : next(forbidden('هذه الصفحة للمسؤول الإداري فقط'));
 
 export const requireSupervisor = (req, res, next) =>
-  req.user?.role === 'supervisor' ? next() : next(forbidden('هذا الإجراء للمشرفين فقط'));
+  req.user?.role === 'supervisor' && req.user.supervisor_id ? next() : next(forbidden('هذا الإجراء للمشرفين فقط'));

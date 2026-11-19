@@ -1,13 +1,16 @@
 import { Router } from 'express';
 import { query, tx } from '../db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, requireSupervisor, allowRoles } from '../middleware/auth.js';
 import { notFound, conflict, badRequest, forbidden, uuidParam, isUuid } from '../utils/errors.js';
 import { parse, z, reqText, optText, optDate, optPhone } from '../utils/validate.js';
 import { logActivity } from '../services/activity.js';
-import { listStudents, getStudent, genderAllowed } from '../services/students.js';
+import { listStudents, getStudent, genderAllowed, createStudent, removeStudent, suspendStudent } from '../services/students.js';
+import { notifyAdmins } from '../services/notify.js';
 
 const router = Router();
 router.param('id', uuidParam);
+// مشرف التسجيل لا يصل إلى سجلات الطلاب
+router.use(allowRoles('admin', 'supervisor'));
 
 const isAdmin = (req) => req.user.role === 'admin';
 
@@ -15,7 +18,7 @@ const isAdmin = (req) => req.user.role === 'admin';
 async function loadStudentFor(req, id) {
   const st = await getStudent(id);
   if (!st) throw notFound('الطالب غير موجود');
-  if (!isAdmin(req) && st.supervisor_id !== req.user.supervisor_id) throw notFound('الطالب غير موجود');
+  if (!isAdmin(req) && (st.supervisor_id !== req.user.supervisor_id || st.status === 'removed')) throw notFound('الطالب غير موجود');
   return st;
 }
 
@@ -44,51 +47,22 @@ router.get('/', async (req, res) => {
   } else {
     supervisorId = req.user.supervisor_id;
   }
-  const students = await listStudents({ supervisorId });
-  res.json({ students });
+  const includeRemoved = isAdmin(req) && req.query.include_removed === 'true';
+  const students = await listStudents({ supervisorId, includeRemoved });
+  if (isAdmin(req)) return res.json({ students });
+  // الطلبات المعلقة لطلاب المشرف (لعرض حالة "بانتظار موافقة الإدارة")
+  const { rows: pending } = await query(
+    `select student_id, kind from student_requests where supervisor_id = $1 and status = 'pending'`,
+    [req.user.supervisor_id]
+  );
+  const byStudent = new Map(pending.map((p) => [p.student_id, p.kind]));
+  res.json({ students: students.map((st) => ({ ...st, pending_request: byStudent.get(st.id) || null })) });
 });
 
 router.post('/', async (req, res) => {
   const b = parse(z.object({ ...studentShape, supervisor_id: z.string().uuid().optional() }), req.body);
   const supervisorId = isAdmin(req) ? b.supervisor_id : req.user.supervisor_id;
-  if (!supervisorId) throw badRequest('اختر المشرف المسؤول عن الطالب');
-
-  const { rows } = await query(
-    `select sp.id, sp.supervisor_type, sp.status from supervisors sp where sp.id = $1`,
-    [supervisorId]
-  );
-  const sup = rows[0];
-  if (!sup) throw notFound('المشرف غير موجود');
-  if (sup.status !== 'active') throw conflict('لا يمكن إضافة طلاب لمشرف مفصول');
-
-  let gender = b.gender;
-  if (sup.supervisor_type === 'male') gender = 'male';
-  if (sup.supervisor_type === 'female') gender = 'female';
-  if (!gender) throw badRequest('اختر جنس الطالب');
-  if (!genderAllowed(sup.supervisor_type, gender)) throw badRequest('جنس الطالب لا يتوافق مع نوع المشرف');
-
-  const id = await tx(async (c) => {
-    const r = await c.query(
-      `insert into students (supervisor_id, full_name, gender, birth_date, phone, guardian_name, guardian_phone,
-                             address, join_date, initial_parts, notes)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9::date, current_date), $10, $11) returning id`,
-      [
-        supervisorId,
-        b.full_name,
-        gender,
-        b.birth_date ?? null,
-        b.phone ?? null,
-        b.guardian_name ?? null,
-        b.guardian_phone ?? null,
-        b.address ?? null,
-        b.join_date ?? null,
-        b.initial_parts,
-        b.notes ?? null,
-      ]
-    );
-    await logActivity(c, req.user, 'student.create', 'student', r.rows[0].id, b.full_name, { supervisor_id: supervisorId });
-    return r.rows[0].id;
-  });
+  const id = await tx((c) => createStudent(c, req.user, b, { supervisorId }));
   res.status(201).json({ student: await getStudent(id) });
 });
 
@@ -113,8 +87,15 @@ router.get('/:id', async (req, res) => {
     [student.id]
   );
 
+  const { rows: requests } = await query(
+    `select id, kind, reason, comments, status, requested_by_name, decided_by_name, decided_at, decision_note, created_at
+     from student_requests where student_id = $1 order by created_at desc`,
+    [student.id]
+  );
+
   res.json({
     student,
+    requests,
     appointments,
     exams: appointments.filter((a) => a.kind === 'exam' && ['completed', 'missed'].includes(a.status)),
     warnings,
@@ -155,29 +136,16 @@ router.put('/:id', async (req, res) => {
   res.json({ student: await getStudent(st.id) });
 });
 
-router.post('/:id/suspend', async (req, res) => {
+// الفصل المباشر للمسؤول فقط — المشرف يرسل طلب فصل (POST /:id/requests)
+router.post('/:id/suspend', requireAdmin, async (req, res) => {
   const { reason } = parse(z.object({ reason: optText('السبب', 500) }), req.body);
   const st = await loadStudentFor(req, req.params.id);
-  if (st.status === 'suspended') throw conflict('الطالب مفصول بالفعل');
-  await tx(async (c) => {
-    await c.query(
-      `update students set status = 'suspended', suspended_at = now(), suspension_reason = $1 where id = $2`,
-      [reason ?? null, st.id]
-    );
-    // المواعيد القادمة تُلغى تلقائيًا
-    const r = await c.query(
-      `update appointments set status = 'cancelled' where student_id = $1 and status = 'scheduled'`,
-      [st.id]
-    );
-    await logActivity(c, req.user, 'student.suspend', 'student', st.id, st.full_name, {
-      reason,
-      cancelled_appointments: r.rowCount,
-    });
-  });
+  if (st.status !== 'active') throw conflict('الطالب غير نشط');
+  await tx((c) => suspendStudent(c, req.user, st, reason));
   res.json({ student: await getStudent(st.id) });
 });
 
-router.post('/:id/reinstate', async (req, res) => {
+router.post('/:id/reinstate', requireAdmin, async (req, res) => {
   const st = await loadStudentFor(req, req.params.id);
   if (st.status !== 'suspended') throw conflict('الطالب غير مفصول');
   if (!st.supervisor_id) throw conflict('انقل الطالب إلى مشرف أولًا ثم أعد تفعيله');
@@ -192,15 +160,68 @@ router.post('/:id/reinstate', async (req, res) => {
   res.json({ student: await getStudent(st.id) });
 });
 
-router.delete('/:id', async (req, res) => {
+/**
+ * حذف ناعم (للمسؤول فقط): يُخفى الطالب من القوائم وتُلغى مواعيده القادمة، وتبقى كل سجلاته محفوظة.
+ * المشرف لا يحذف — يرسل "طلب حذف" للإدارة.
+ */
+router.delete('/:id', requireAdmin, async (req, res) => {
+  const { reason } = parse(z.object({ reason: optText('السبب', 500) }), req.body);
   const st = await loadStudentFor(req, req.params.id);
-  await tx(async (c) => {
-    await logActivity(c, req.user, 'student.delete', 'student', st.id, st.full_name, {
-      supervisor_id: st.supervisor_id,
-    });
-    await c.query('delete from students where id = $1', [st.id]); // cascade: المواعيد والتحذيرات
-  });
+  if (st.status === 'removed') throw conflict('الطالب محذوف مسبقًا');
+  await tx((c) => removeStudent(c, req.user, st, reason));
   res.json({ ok: true });
+});
+
+/** استعادة طالب محذوف (للمسؤول) — يعود موقوفًا ليُعاد تفعيله أو نقله */
+router.post('/:id/restore', requireAdmin, async (req, res) => {
+  const st = await loadStudentFor(req, req.params.id);
+  if (st.status !== 'removed') throw conflict('الطالب غير محذوف');
+  await tx(async (c) => {
+    await c.query(
+      `update students set status = 'suspended', removed_at = null, suspended_at = now(),
+              suspension_reason = 'مستعاد بعد الحذف — بانتظار إعادة التفعيل' where id = $1`,
+      [st.id]
+    );
+    await logActivity(c, req.user, 'student.restore', 'student', st.id, st.full_name);
+  });
+  res.json({ student: await getStudent(st.id) });
+});
+
+// ---------------- طلبات الحذف / الفصل (من المشرف إلى الإدارة) ----------------
+const requestSchema = z.object({
+  kind: z.enum(['removal', 'dismissal'], { errorMap: () => ({ message: 'اختر نوع الطلب' }) }),
+  reason: reqText('السبب', 1000),
+  comments: optText('الملاحظات', 2000),
+});
+
+router.post('/:id/requests', requireSupervisor, async (req, res) => {
+  const b = parse(requestSchema, req.body);
+  const st = await loadStudentFor(req, req.params.id);
+  if (b.kind === 'dismissal' && st.status !== 'active') throw conflict('الطالب غير نشط حاليًا');
+  const request = await tx(async (c) => {
+    let rows;
+    try {
+      ({ rows } = await c.query(
+        `insert into student_requests (student_id, supervisor_id, requested_by, requested_by_name, kind, reason, comments)
+         values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+        [st.id, req.user.supervisor_id, req.user.id, req.user.full_name, b.kind, b.reason, b.comments ?? null]
+      ));
+    } catch (e) {
+      if (e.code === '23505') throw conflict('يوجد طلب معلّق لهذا الطالب بالفعل', 'DUPLICATE_REQUEST');
+      throw e;
+    }
+    const label = b.kind === 'removal' ? 'حذف' : 'فصل';
+    await logActivity(c, req.user, `student.request_${b.kind}`, 'student', st.id, st.full_name, { reason: b.reason });
+    await notifyAdmins(c, {
+      type: 'student_request',
+      title: `طلب ${label} طالب بانتظار الموافقة`,
+      body: `${req.user.full_name} يطلب ${label} ${st.full_name}: ${b.reason}`,
+      link: '/requests',
+      dedupeKey: `student_request:${rows[0].id}`,
+    });
+    return rows[0];
+  });
+  res.status(201).json({ request });
 });
 
 /** نقل طالب لمشرف آخر (للمسؤول) — تُلغى مواعيده القادمة مع المشرف السابق */

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { config } from '../config.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, allowRoles } from '../middleware/auth.js';
 import { badRequest, notFound, isUuid } from '../utils/errors.js';
 import { localDateStr, monthStart, rangeSql } from '../utils/tz.js';
 import { listStudents } from '../services/students.js';
@@ -9,6 +9,8 @@ import { getSettings } from '../services/settings.js';
 import { supervisorPerformance } from '../services/performance.js';
 
 const router = Router();
+// مشرف التسجيل لا يصل إلى لوحات الطلاب وتقاريرهم
+router.use(allowRoles('admin', 'supervisor'));
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 

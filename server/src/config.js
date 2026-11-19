@@ -33,8 +33,30 @@ let ssl = false;
 if (env.DATABASE_SSL === 'false') ssl = false;
 else if (isProd || /supabase|pooler/i.test(databaseUrl)) ssl = { rejectUnauthorized: false };
 
+const bool = (v, def) => (v === undefined || v === '' ? def : /^(1|true|yes|on)$/i.test(String(v).trim()));
+const appUrl = (env.APP_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${Number(env.PORT) || 4000}`).replace(/\/+$/, '');
+
 export const config = {
   isProd,
+  isTest: env.NODE_ENV === 'test',
+  appUrl,
+  // سر استدعاء المهام المجدولة (Supabase Cron). بدونه يُرفض أي استدعاء خارجي.
+  cronSecret: env.CRON_SECRET || '',
+  // تشغيل المهام داخل الخادم أيضًا أثناء نشاطه (مساعد فقط — المصدر الموثوق هو Supabase Cron)
+  inProcessScheduler: bool(env.IN_PROCESS_SCHEDULER, env.NODE_ENV !== 'test'),
+  email: {
+    enabled: bool(env.EMAIL_NOTIFICATIONS_ENABLED, false),
+    resendApiKey: env.RESEND_API_KEY || '',
+    from: env.EMAIL_FROM || '',
+    replyTo: env.EMAIL_REPLY_TO || 'misk.quran26@gmail.com',
+    fromName: 'إدارة ملتقى المسك القرآني',
+    apiBase: env.RESEND_API_BASE || 'https://api.resend.com',
+  },
+  google: {
+    clientId: env.GOOGLE_CLIENT_ID || '',
+    clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri: env.GOOGLE_REDIRECT_URI || `${appUrl}/api/google/oauth/callback`,
+  },
   port: Number(env.PORT) || 4000,
   databaseUrl,
   ssl,

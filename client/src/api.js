@@ -38,3 +38,21 @@ export const qs = (params) => {
   const s = p.toString();
   return s ? `?${s}` : '';
 };
+
+/** تنزيل ملف (مثل Excel) من الـ API مع الحفاظ على الجلسة */
+export async function download(url, filename) {
+  const res = await fetch(`/api${url}`, { credentials: 'same-origin' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || 'تعذر تنزيل الملف');
+  }
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+}

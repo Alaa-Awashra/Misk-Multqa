@@ -7,7 +7,7 @@ import { useLoad } from '../lib/hooks.js';
 import { Alert, Avatar, Badge, ConfirmDialog, Empty, Field, Icon, PageHeader, ProgressBar, Spinner, StatCard, Tabs } from '../components/ui.jsx';
 import StudentForm from '../components/StudentForm.jsx';
 import { AppointmentDetail, AppointmentForm } from '../components/Appointments.jsx';
-import { ACTION_LABEL, APPT_STATUS, KIND_LABEL, RECITATION_TYPE_LABEL, actionTone, genderLabel, supervisorTypeLabel } from '../lib/labels.js';
+import { ACTION_LABEL, APPT_STATUS, KIND_LABEL, RECITATION_TYPE_LABEL, REQUEST_KIND, REQUEST_STATUS, actionTone, genderLabel, supervisorTypeLabel } from '../lib/labels.js';
 import { age, fmtDate, fmtDateTime, fmtIso, fmtNum, fmtTime, relativeDays } from '../lib/format.js';
 
 export default function StudentDetail() {
@@ -26,17 +26,20 @@ export default function StudentDetail() {
   const [dialog, setDialog] = useState(null);
   const [text, setText] = useState('');
   const [target, setTarget] = useState('');
+  const [comments, setComments] = useState('');
 
   if (loading && !data) return <Spinner />;
   if (error) return <Alert tone="danger">{error} <Link to="/students">العودة للقائمة</Link></Alert>;
 
-  const { student: s, appointments, exams, warnings, history } = data;
+  const { student: s, appointments, exams, warnings, history, requests = [] } = data;
   const suspended = s.status === 'suspended';
+  const removed = s.status === 'removed';
+  const pendingReq = requests.find((r) => r.status === 'pending');
   const activeWarnings = warnings.filter((w) => w.active);
   const close = () => setDialog(null);
   const recs = appointments.filter((a) => a.kind === 'recitation');
   const upcoming = appointments.filter((a) => a.status === 'scheduled').sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
-  const canBook = isSupervisor && !suspended;
+  const canBook = isSupervisor && !suspended && !removed;
   const apptWithName = (a) => ({ ...a, student_id: s.id, student_name: s.full_name, supervisor_name: s.supervisor_name });
 
   const commitTone = s.attendance_rate === null ? 'primary' : s.attendance_rate >= 75 ? 'success' : s.attendance_rate >= 50 ? 'warn' : 'danger';
@@ -51,7 +54,7 @@ export default function StudentDetail() {
               {s.full_name}
               <span className="row" style={{ marginTop: 4, display: 'flex' }}>
                 <Badge tone="muted">{genderLabel(s.gender)}</Badge>
-                {suspended ? <Badge tone="danger">مفصول</Badge> : s.warning ? <Badge tone="warn">تحت التحذير</Badge> : <Badge tone="success">منتظم</Badge>}
+                {removed ? <Badge tone="danger">محذوف (السجلات محفوظة)</Badge> : suspended ? <Badge tone="danger">مفصول</Badge> : s.warning ? <Badge tone="warn">تحت التحذير</Badge> : <Badge tone="success">منتظم</Badge>}
               </span>
             </span>
           </span>
@@ -74,6 +77,16 @@ export default function StudentDetail() {
         <Link to="/students">← {isAdmin ? 'كل الطلاب' : n.many}</Link>
       </div>
 
+      {removed && (
+        <Alert tone="danger">
+          حُذف {n.the} في {fmtDate(s.removed_at)}{s.removal_reason ? ` — ${s.removal_reason}` : ''}. السجلات محفوظة ويمكن استعادته.
+        </Alert>
+      )}
+      {pendingReq && (
+        <Alert tone="info">
+          يوجد طلب <b>{REQUEST_KIND[pendingReq.kind]}</b> بانتظار قرار الإدارة (أُرسل {fmtDate(pendingReq.created_at)}): {pendingReq.reason}
+        </Alert>
+      )}
       {suspended && (
         <Alert tone="warn">
           {n.the} مفصول منذ {fmtDate(s.suspended_at)}{s.suspension_reason ? ` — السبب: ${s.suspension_reason}` : ''}. لا يمكن حجز مواعيد له حتى تعيد تفعيله.
@@ -139,12 +152,25 @@ export default function StudentDetail() {
           <div className="row" style={{ marginTop: 16 }}>
             {isAdmin && <button className="btn btn-sm btn-ghost" onClick={() => { setTarget(''); setDialog('transfer'); }} type="button"><Icon name="swap" size={15} /> نقل</button>}
             <button className="btn btn-sm btn-ghost" onClick={() => { setText(''); setDialog('warning'); }} type="button"><Icon name="alert" size={15} /> تحذير</button>
-            {suspended ? (
-              <button className="btn btn-sm btn-success" onClick={() => setDialog('reinstate')} type="button"><Icon name="undo" size={15} /> إعادة تفعيل</button>
+            {isAdmin ? (
+              <>
+                {removed ? (
+                  <button className="btn btn-sm btn-success" onClick={() => setDialog('restore')} type="button"><Icon name="undo" size={15} /> استعادة</button>
+                ) : suspended ? (
+                  <button className="btn btn-sm btn-success" onClick={() => setDialog('reinstate')} type="button"><Icon name="undo" size={15} /> إعادة تفعيل</button>
+                ) : (
+                  <button className="btn btn-sm btn-warn" onClick={() => { setText(''); setDialog('suspend'); }} type="button"><Icon name="pause" size={15} /> فصل</button>
+                )}
+                {!removed && <button className="btn btn-sm btn-danger" onClick={() => { setText(''); setDialog('delete'); }} type="button"><Icon name="trash" size={15} /> حذف</button>}
+              </>
             ) : (
-              <button className="btn btn-sm btn-warn" onClick={() => { setText(''); setDialog('suspend'); }} type="button"><Icon name="pause" size={15} /> فصل</button>
+              !pendingReq && (
+                <>
+                  {!suspended && <button className="btn btn-sm btn-warn" onClick={() => { setText(''); setComments(''); setDialog('req_dismissal'); }} type="button"><Icon name="pause" size={15} /> طلب فصل</button>}
+                  <button className="btn btn-sm btn-danger" onClick={() => { setText(''); setComments(''); setDialog('req_removal'); }} type="button"><Icon name="trash" size={15} /> طلب حذف</button>
+                </>
+              )
             )}
-            <button className="btn btn-sm btn-danger" onClick={() => setDialog('delete')} type="button"><Icon name="trash" size={15} /> حذف</button>
           </div>
         </div>
       </div>
@@ -156,6 +182,7 @@ export default function StudentDetail() {
           { value: 'exams', label: 'امتحانات السور', count: exams.length },
           { value: 'recitations', label: 'سجل التسميع', count: recs.length },
           { value: 'warnings', label: 'التحذيرات', count: activeWarnings.length },
+          { value: 'requests', label: 'طلبات الإدارة', count: requests.length },
           { value: 'history', label: 'السجل' },
         ]}
       />
@@ -237,6 +264,28 @@ export default function StudentDetail() {
         </div>
       )}
 
+      {tab === 'requests' && (
+        <div className="card">
+          {requests.length === 0 ? (
+            <Empty icon="inbox" title="لا توجد طلبات حذف أو فصل" />
+          ) : (
+            <ul className="list-plain">
+              {requests.map((r) => (
+                <li key={r.id} style={{ alignItems: 'flex-start' }}>
+                  <div>
+                    <b>طلب {REQUEST_KIND[r.kind]}</b> — {r.reason}
+                    {r.comments && <div className="small muted">{r.comments}</div>}
+                    <div className="small muted">{fmtDateTime(r.created_at)} • {r.requested_by_name}</div>
+                    {r.decided_at && <div className="small">القرار: {r.decided_by_name || '—'} {fmtDateTime(r.decided_at)}{r.decision_note ? ` — ${r.decision_note}` : ''}</div>}
+                  </div>
+                  <Badge tone={REQUEST_STATUS[r.status].tone}>{REQUEST_STATUS[r.status].label}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {tab === 'history' && (
         <div className="card">
           {history.length === 0 ? (
@@ -283,9 +332,23 @@ export default function StudentDetail() {
         سيعود <b>{s.full_name}</b> ضمن {n.many} النشطين.
       </ConfirmDialog>
 
-      <ConfirmDialog open={dialog === 'delete'} onClose={close} title={`حذف ${n.the} نهائيًا`} confirmText="حذف نهائي" requireText={s.full_name}
-        onConfirm={async () => { await api.del(`/students/${s.id}`); toast.success('تم الحذف'); navigate('/students'); }}>
-        <Alert tone="danger"><b>تحذير: لا يمكن التراجع.</b> ستُحذف كل بيانات <b>{s.full_name}</b> بما فيها التسميعات والامتحانات والعلامات. إن أردت إيقافه مؤقتًا فاستخدم «فصل».</Alert>
+      <ConfirmDialog open={dialog === 'delete'} onClose={close} title={`حذف ${n.the}`} confirmText="حذف" requireText={s.full_name}
+        onConfirm={async () => { await api.del(`/students/${s.id}`, { reason: text }); toast.success('تم الحذف — السجلات محفوظة'); navigate('/students'); }}>
+        <Alert tone="info">حذف ناعم: يختفي <b>{s.full_name}</b> من القوائم والإحصائيات وتُلغى مواعيده القادمة، وتبقى كل سجلاته (التسميع والامتحانات) محفوظة ويمكن استعادته لاحقًا.</Alert>
+        <Field label="السبب (اختياري)">{(fid) => <textarea id={fid} className="textarea" style={{ minHeight: 60 }} value={text} onChange={(e) => setText(e.target.value)} />}</Field>
+      </ConfirmDialog>
+
+      <ConfirmDialog open={dialog === 'restore'} onClose={close} tone="success" title={`استعادة ${n.the}`} confirmText="استعادة"
+        onConfirm={async () => { await api.post(`/students/${s.id}/restore`); toast.success('تمت الاستعادة — الطالب الآن مفصول بانتظار إعادة التفعيل'); close(); reload(); }}>
+        سيعود <b>{s.full_name}</b> إلى القوائم بحالة «مفصول»، ثم يمكنك إعادة تفعيله أو نقله.
+      </ConfirmDialog>
+
+      <ConfirmDialog open={dialog === 'req_removal' || dialog === 'req_dismissal'} onClose={close} tone={dialog === 'req_removal' ? 'danger' : 'warn'}
+        title={dialog === 'req_removal' ? `طلب حذف ${n.the}` : `طلب فصل ${n.the}`} confirmText="إرسال الطلب للإدارة" disabled={!text.trim()}
+        onConfirm={async () => { await api.post(`/students/${s.id}/requests`, { kind: dialog === 'req_removal' ? 'removal' : 'dismissal', reason: text, comments }); toast.success('أُرسل الطلب للإدارة — ستُبلَّغ بالقرار'); close(); reload(); }}>
+        <Alert tone="info">لا يُنفَّذ الحذف أو الفصل إلا بعد موافقة الإدارة. تبقى سجلات {n.the} محفوظة في كل الأحوال.</Alert>
+        <Field label="السبب" required>{(fid) => <textarea id={fid} className="textarea" style={{ minHeight: 70 }} value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} />}</Field>
+        <Field label="ملاحظات إضافية (اختياري)">{(fid) => <textarea id={fid} className="textarea" style={{ minHeight: 50 }} value={comments} onChange={(e) => setComments(e.target.value)} maxLength={2000} />}</Field>
       </ConfirmDialog>
 
       <ConfirmDialog open={dialog === 'warning'} onClose={close} tone="warn" title="إضافة تحذير" confirmText="إضافة التحذير" disabled={!text.trim()}

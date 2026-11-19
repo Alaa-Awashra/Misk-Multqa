@@ -1,5 +1,7 @@
 import { query } from '../db.js';
 import { getSettings } from './settings.js';
+import { logActivity } from './activity.js';
+import { notFound, conflict, badRequest } from '../utils/errors.js';
 
 const round = (n, d = 2) => (n === null || n === undefined ? null : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -80,10 +82,12 @@ export function enrichStudent(r, settings) {
  * قائمة الطلاب مع الإحصائيات.
  * supervisorId: uuid | 'none' (بدون مشرف) | null (الكل)
  */
-export async function listStudents({ supervisorId = null, studentId = null } = {}) {
+export async function listStudents({ supervisorId = null, studentId = null, includeRemoved = false } = {}) {
   const settings = await getSettings();
   const params = [];
   const where = [];
+  // الطلاب المحذوفون (حذف ناعم) لا يظهرون في القوائم والإحصائيات، لكن سجلاتهم محفوظة
+  if (!includeRemoved && !studentId) where.push(`s.status <> 'removed'`);
   if (supervisorId === 'none') where.push('s.supervisor_id is null');
   else if (supervisorId) {
     params.push(supervisorId);
@@ -103,4 +107,76 @@ export async function listStudents({ supervisorId = null, studentId = null } = {
 export async function getStudent(id) {
   const rows = await listStudents({ studentId: id });
   return rows[0] || null;
+}
+
+/**
+ * إنشاء طالب — المسار الوحيد لإضافة الطلاب (من المشرف/المسؤول أو من قبول طلب التحاق).
+ * c: client داخل transaction. يعيد معرّف الطالب.
+ */
+export async function createStudent(c, actor, b, { supervisorId, applicationId = null } = {}) {
+  if (!supervisorId) throw badRequest('اختر المشرف المسؤول عن الطالب');
+  const { rows } = await c.query(`select sp.id, sp.supervisor_type, sp.status from supervisors sp where sp.id = $1`, [supervisorId]);
+  const sup = rows[0];
+  if (!sup) throw notFound('المشرف غير موجود');
+  if (sup.status !== 'active') throw conflict('لا يمكن إضافة طلاب لمشرف موقوف');
+
+  let gender = b.gender;
+  if (sup.supervisor_type === 'male' && !gender) gender = 'male';
+  if (sup.supervisor_type === 'female' && !gender) gender = 'female';
+  if (!gender) throw badRequest('اختر جنس الطالب');
+  if (!genderAllowed(sup.supervisor_type, gender)) throw badRequest('جنس الطالب لا يتوافق مع نوع المشرف');
+
+  const r = await c.query(
+    `insert into students (supervisor_id, full_name, gender, birth_date, phone, guardian_name, guardian_phone,
+                           address, join_date, initial_parts, notes, application_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9::date, current_date), $10, $11, $12) returning id`,
+    [
+      supervisorId,
+      b.full_name,
+      gender,
+      b.birth_date ?? null,
+      b.phone ?? null,
+      b.guardian_name ?? null,
+      b.guardian_phone ?? null,
+      b.address ?? null,
+      b.join_date ?? null,
+      b.initial_parts ?? 0,
+      b.notes ?? null,
+      applicationId,
+    ]
+  );
+  await logActivity(c, actor, 'student.create', 'student', r.rows[0].id, b.full_name, {
+    supervisor_id: supervisorId,
+    ...(applicationId ? { application_id: applicationId } : {}),
+  });
+  return r.rows[0].id;
+}
+
+/** حذف ناعم: الطالب يختفي من القوائم، مواعيده القادمة تُلغى، وكل سجلاته تبقى */
+export async function removeStudent(c, actor, st, reason) {
+  await c.query(`update students set status = 'removed', removed_at = now(), removal_reason = $1 where id = $2`, [
+    reason ?? null,
+    st.id,
+  ]);
+  const r = await c.query(`update appointments set status = 'cancelled' where student_id = $1 and status = 'scheduled'`, [st.id]);
+  await c.query(
+    `update student_requests set status = 'cancelled', decision_note = 'أُغلق تلقائيًا: حُذف الطالب'
+     where student_id = $1 and status = 'pending' and kind <> 'removal'`,
+    [st.id]
+  );
+  await logActivity(c, actor, 'student.remove', 'student', st.id, st.full_name, {
+    reason,
+    supervisor_id: st.supervisor_id,
+    cancelled_appointments: r.rowCount,
+  });
+}
+
+/** فصل (إيقاف) طالب مع إلغاء مواعيده القادمة — السجلات محفوظة */
+export async function suspendStudent(c, actor, st, reason) {
+  await c.query(`update students set status = 'suspended', suspended_at = now(), suspension_reason = $1 where id = $2`, [
+    reason ?? null,
+    st.id,
+  ]);
+  const r = await c.query(`update appointments set status = 'cancelled' where student_id = $1 and status = 'scheduled'`, [st.id]);
+  await logActivity(c, actor, 'student.suspend', 'student', st.id, st.full_name, { reason, cancelled_appointments: r.rowCount });
 }

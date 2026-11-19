@@ -5,6 +5,40 @@ import { useLoad } from '../lib/hooks.js';
 import { Alert, Badge, BarChart, Empty, PageHeader, ProgressBar, Spinner, StatCard } from '../components/ui.jsx';
 import { ACTION_LABEL, KIND_LABEL, actionTone, supervisorTypeLabel } from '../lib/labels.js';
 import { fmtDate, fmtDateShort, fmtDateTime, fmtTime, fmtWeekday } from '../lib/format.js';
+import { useSummary } from '../context/Summary.jsx';
+
+/** تنبيهات المتابعة والتحذيرات للمشرف */
+function SupervisorNotices() {
+  const { data } = useLoad(() => api.get('/profile/record'), []);
+  if (!data) return null;
+  const g = data.compliance.grace;
+  return (
+    <>
+      {data.active_warnings > 0 && (
+        <Alert tone="danger">
+          لديك <b>{data.active_warnings}</b> تحذير رسمي ساري من أصل {data.threshold}. <Link to="/my-record">التفاصيل</Link>
+        </Alert>
+      )}
+      {g && g.items.length > 0 && (
+        <Alert tone="warn">
+          لديك <b>{g.items.length}</b> سجل ناقص من الفترة السابقة — استكملها قبل <b>{fmtDateTime(g.deadline)}</b>. <Link to="/my-record">عرض البنود</Link>
+        </Alert>
+      )}
+    </>
+  );
+}
+
+function AdminNotices() {
+  const { summary } = useSummary();
+  if (!summary.requests && !summary.messages && !summary.applications) return null;
+  return (
+    <Alert tone="info">
+      {summary.requests > 0 && <><Link to="/requests"><b>{summary.requests}</b> طلب حذف/فصل بانتظار قرارك</Link>{' • '}</>}
+      {summary.messages > 0 && <><Link to="/messages"><b>{summary.messages}</b> محادثة بها رسائل جديدة</Link>{' • '}</>}
+      {summary.applications > 0 && <Link to="/admissions"><b>{summary.applications}</b> طلب التحاق جديد</Link>}
+    </Alert>
+  );
+}
 
 export default function Dashboard() {
   const { isAdmin, user, n } = useAuth();
@@ -42,6 +76,8 @@ export default function Dashboard() {
           )
         }
       />
+
+      {isAdmin ? <AdminNotices /> : <SupervisorNotices />}
 
       {d.appointments.pending > 0 && (
         <Alert tone="warn">
