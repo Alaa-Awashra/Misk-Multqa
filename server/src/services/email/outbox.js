@@ -1,20 +1,31 @@
 // صندوق البريد الصادر: الرسائل تُحفظ أولًا في قاعدة البيانات (داخل نفس transaction الإجراء الإداري)
 // ثم تُرسل في الخلفية. فشل الإرسال لا يُلغي الإجراء الإداري أبدًا.
+// المزوّد: Google Apps Script (MailApp) من حساب الملتقى — انظر appsScript.js
 import { pool } from '../../db.js';
+import { config } from '../../config.js';
 import { renderEmail } from './templates.js';
-import { emailConfigStatus, sendViaResend } from './resend.js';
+import { emailConfigStatus, sendViaAppsScript } from './appsScript.js';
 
 const MAX_ATTEMPTS = 6;
-const SEND_SPACING_MS = 600; // احترام حد Resend (طلبان في الثانية على الخطة المجانية)
+const STALE_DAYS = 7; // رسالة انتظرت أكثر من أسبوع (مثلًا بسبب تعطل الإعداد) لا تُرسل متأخرة
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // قابل للاستبدال في الاختبارات
-let transport = sendViaResend;
+let transport = sendViaAppsScript;
 let statusFn = emailConfigStatus;
 export const __setEmailTransport = (fn, status) => {
-  transport = fn || sendViaResend;
+  transport = fn || sendViaAppsScript;
   statusFn = status || emailConfigStatus;
 };
+
+/** عدد الرسائل المرسلة خلال آخر 24 ساعة (نافذة متحركة) وموعد تحرر أول مكان */
+export async function dailyUsage() {
+  const { rows } = await pool.query(
+    `select count(*)::int as sent, min(sent_at) as oldest from email_outbox
+     where status = 'sent' and sent_at > now() - interval '24 hours'`
+  );
+  return { sent: rows[0].sent, limit: config.email.dailyLimit, oldest: rows[0].oldest };
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,7 +75,8 @@ export function kickOutbox() {
 const backoff = (attempts) => Math.min(6 * 3600_000, 60_000 * 2 ** Math.max(0, attempts - 1));
 
 /** يرسل الرسائل المستحقة. آمن للتشغيل المتزامن (FOR UPDATE SKIP LOCKED). */
-export async function processOutbox({ limit = 50 } = {}) {
+export async function processOutbox({ limit: requested = 50 } = {}) {
+  let limit = requested;
   if (running) return running;
   running = (async () => {
     const stats = { sent: 0, failed: 0, retried: 0 };
@@ -75,6 +87,26 @@ export async function processOutbox({ limit = 50 } = {}) {
       `update email_outbox set status = 'pending', updated_at = now()
        where status = 'sending' and updated_at < now() - interval '10 minutes'`
     );
+    // رسائل قديمة جدًا لا تُرسل متأخرة (تبقى في السجل ويمكن إعادتها يدويًا)
+    await pool.query(
+      `update email_outbox set status = 'failed', last_error = $1, updated_at = now()
+       where status = 'pending' and created_at < now() - ($2 || ' days')::interval`,
+      [`انتهت صلاحية الرسالة: بقيت في الانتظار أكثر من ${STALE_DAYS} أيام`, String(STALE_DAYS)]
+    );
+
+    // الحد اليومي (نافذة 24 ساعة): لا نتجاوزه أبدًا ونؤجل الباقي
+    const usage = await dailyUsage();
+    let budget = usage.limit - usage.sent;
+    if (budget <= 0) {
+      const wait = usage.oldest ? Math.max(60_000, new Date(usage.oldest).getTime() + 24 * 3600_000 - Date.now() + 60_000) : 3600_000;
+      await pool.query(
+        `update email_outbox set next_attempt_at = greatest(next_attempt_at, now() + ($1 || ' milliseconds')::interval), updated_at = now()
+         where status = 'pending' and next_attempt_at <= now()`,
+        [String(wait)]
+      );
+      return { ...stats, skipped: 'daily_limit' };
+    }
+    limit = Math.min(limit, budget);
 
     const { rows } = await pool.query(
       `update email_outbox set status = 'sending', attempts = attempts + 1, updated_at = now()
@@ -93,7 +125,7 @@ export async function processOutbox({ limit = 50 } = {}) {
           subject: m.subject,
           html: m.html,
           text: m.text_body,
-          idempotencyKey: `mq-${m.dedupe_key}`,
+          idempotencyKey: `mq-${m.id}`, // معرّف ثابت للصف: إعادة المحاولة لا تُرسل نسخة ثانية
         });
         // رسائل التحقق تحتوي رمزًا سريًا — لا نُبقي نصها بعد الإرسال
         const redact = m.template === 'verify_email';
@@ -119,7 +151,7 @@ export async function processOutbox({ limit = 50 } = {}) {
           break; // أوقف الدفعة واحترم المهلة
         }
       }
-      await sleep(SEND_SPACING_MS);
+      if (i < rows.length - 1) await sleep(config.email.sendIntervalMs);
     }
     // رسائل حُجزت ولم تُرسل بسبب إيقاف الدفعة تعود للانتظار دون احتساب محاولة
     const untouched = rows.slice(i).map((m) => m.id);

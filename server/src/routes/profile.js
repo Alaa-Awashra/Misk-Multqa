@@ -8,7 +8,7 @@ import { requireSupervisor } from '../middleware/auth.js';
 import { setUserEmail, startEmailVerification } from '../services/emailVerification.js';
 import { supervisorComplianceSummary } from '../services/compliance.js';
 import { getSettings } from '../services/settings.js';
-import { emailConfigStatus } from '../services/email/resend.js';
+import { emailConfigStatus } from '../services/email/appsScript.js';
 
 const router = Router();
 

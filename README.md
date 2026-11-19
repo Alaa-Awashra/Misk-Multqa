@@ -215,23 +215,21 @@ masak-quran-forum/
 
 ---
 
-## 10) إعداد البريد — Resend
+## 10) إعداد البريد — Google Apps Script (MailApp)
 
 البريد اختياري: **كل الإشعارات تظهر داخل المنصة دائمًا**. ما دام البريد غير مُعدّ، تُسجَّل الرسائل بحالة «البريد غير مُعدّ» ولا يدّعي النظام أنها أُرسلت (راجع **الإعدادات ← التكاملات**).
 
-1. أنشئ حسابًا مجانيًا في [resend.com](https://resend.com) (الخطة المجانية تكفي: 3000 رسالة/شهر، 100/يوم).
-2. **لا يمكن الإرسال من عنوان Gmail.** تحتاج نطاقًا تملكه (مثل `misk-quran.org`). في Resend: **Domains → Add Domain**.
-3. أضف سجلات DNS التي يعرضها Resend عند مزوّد النطاق:
-   - **SPF** (TXT/MX على `send.your-domain`) و**DKIM** (TXT `resend._domainkey`) — كما يعرضها Resend حرفيًا.
-   - **DMARC** (موصى به): سجل TXT باسم `_dmarc` وقيمة `v=DMARC1; p=none; rua=mailto:misk.quran26@gmail.com`
-   - انتظر حتى تظهر الحالة **Verified**.
-4. **API Keys → Create** بصلاحية *Sending access* فقط.
-5. على Render (Environment): `RESEND_API_KEY`، `EMAIL_FROM=noreply@your-domain`، `EMAIL_REPLY_TO=misk.quran26@gmail.com`، ثم `EMAIL_NOTIFICATIONS_ENABLED=true`.
-6. من **الإعدادات ← التكاملات** أرسل رسالة تجريبية وتحقق من وصولها.
+الرسائل تُرسل **من حساب الملتقى `misk.quran26@gmail.com` نفسه** عبر Google Apps Script Web App يستخدم `MailApp.sendEmail()` — بلا نطاق خاص، بلا SMTP، بلا App Passwords، وبلا أي خدمة مدفوعة.
 
-اسم المرسل: «إدارة ملتقى المسك القرآني»، والردود تذهب إلى `misk.quran26@gmail.com`. لا يُخزَّن ولا يُطلب أي كلمة مرور لـ Gmail.
+- كود Apps Script الجاهز للنسخ: [`google-apps-script/Code.gs`](google-apps-script/Code.gs) وملف الإعداد [`google-apps-script/appsscript.json`](google-apps-script/appsscript.json).
+- الخطوات الكاملة بالعربية: **[`GOOGLE_EMAIL_SETUP.txt`](GOOGLE_EMAIL_SETUP.txt)**.
+- متغيرات Render: `EMAIL_PROVIDER=google_apps_script`، `GAS_WEB_APP_URL`، `GAS_SHARED_SECRET`، ثم `EMAIL_NOTIFICATIONS_ENABLED=true`.
 
-**الموثوقية:** الرسائل تُحفظ في `email_outbox` داخل نفس transaction الإجراء الإداري ثم تُرسل في الخلفية، مع مفتاح منع تكرار (`dedupe_key` + `Idempotency-Key` لدى Resend)، وإعادة المحاولة مع تأخير متزايد للأخطاء المؤقتة (429/5xx) حتى 6 مرات، واحترام حد الإرسال (رسالة كل 0.6 ثانية). فشل البريد لا يُلغي أي إجراء إداري.
+**الأمان:** رابط الـ Web App عام (لا يمكن لخادم Render تسجيل الدخول بحساب Google)، لذلك كل طلب موقّع بـ HMAC-SHA256 بسر مشترك محفوظ في Script Properties وفي Render فقط (لا يُرسل السر نفسه، ولا يوضع في الرابط أو الواجهة أو GitHub)، مع طابع زمني صالح 5 دقائق و`nonce` يُقبل مرة واحدة. الطلبات غير الموقّعة أو المنتهية أو المعادة تُرفض.
+
+**الحدود:** حساب Gmail الشخصي يسمح بـ **100 مستلم يوميًا** عبر MailApp. Apps Script يفحص `MailApp.getRemainingDailyQuota()` قبل كل رسالة، والخادم لا يتجاوز `EMAIL_DAILY_LIMIT` (الافتراضي 90) خلال أي 24 ساعة ويؤجل الباقي تلقائيًا، مع مهلة 3 ثوانٍ بين الرسائل ومستلم واحد لكل رسالة.
+
+**الموثوقية:** الرسائل تُحفظ في `email_outbox` داخل نفس transaction الإجراء الإداري ثم تُرسل في الخلفية، مع منع تكرار من الطرفين (`dedupe_key` في القاعدة + معرّف ثابت لكل رسالة يتذكره Apps Script 6 ساعات)، وإعادة المحاولة مع تأخير متزايد للأخطاء المؤقتة (نفاد الحصة، أخطاء الشبكة، أخطاء Google الداخلية) حتى 6 مرات. خطأ السر (`AUTH`) فشل نهائي واضح. فشل البريد لا يُلغي أي إجراء إداري.
 
 ---
 

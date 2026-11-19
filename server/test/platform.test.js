@@ -584,7 +584,7 @@ describe('فشل البريد لا يكسر العمليات الإدارية', 
   it('فشل دائم ومؤقت وغياب الإعداد', async () => {
     const sup = await makeSupervisor(ctx, admin);
     await verifyEmailOf(sup.username);
-    const { EmailSendError } = await import('../src/services/email/resend.js');
+    const { EmailSendError } = await import('../src/services/email/errors.js');
 
     ctx.mail.fail = () => new EmailSendError('domain not verified', { retryable: false, status: 403 });
     const r = await admin.post(`/supervisors/${sup.id}/warnings`, { reason: 'اختبار فشل البريد' });
@@ -607,7 +607,7 @@ describe('فشل البريد لا يكسر العمليات الإدارية', 
     ctx.mail.fail = null;
 
     // البريد غير مُعدّ: الرسائل تُسجَّل كـ disabled والإشعار الداخلي يبقى
-    ctx.outbox.__setEmailTransport(async (m) => { ctx.mail.sent.push(m); return { id: 'x' }; }, () => ({ operational: false, problems: ['RESEND_API_KEY غير مضبوط'] }));
+    ctx.outbox.__setEmailTransport(async (m) => { ctx.mail.sent.push(m); return { id: 'x' }; }, () => ({ operational: false, problems: ['GAS_WEB_APP_URL غير مضبوط'] }));
     const r2 = await admin.post(`/supervisors/${sup.id}/warnings`, { reason: 'بدون إعداد بريد' });
     assert.equal(r2.status, 201);
     const dis = await ctx.pool.query(`select status from email_outbox where template = 'supervisor_warning' order by id desc limit 1`);

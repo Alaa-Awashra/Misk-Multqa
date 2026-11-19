@@ -107,13 +107,13 @@ function GeneralSettings() {
 
 function Integrations() {
   const toast = useToast();
-  const { user } = useAuth();
   const [params] = useSearchParams();
   const [emailFilter, setEmailFilter] = useState('');
   const { data: email, reload: reloadEmail } = useLoad(() => api.get(`/email/status${qs({ status: emailFilter })}`), [emailFilter]);
   const { data: google, reload: reloadGoogle } = useLoad(() => api.get('/google/status'), []);
-  const [testTo, setTestTo] = useState(user.email || 'misk.quran26@gmail.com');
+  const [testTo, setTestTo] = useState('misk.quran26@gmail.com');
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState(null); // نتيجة فحص الاتصال بـ Apps Script
   const [disc, setDisc] = useState(false);
 
   useEffect(() => {
@@ -127,11 +127,23 @@ function Integrations() {
     setBusy(true);
     try {
       const r = await api.post('/email/test', { to: testTo });
-      if (r.sent) toast.success('أُرسلت الرسالة التجريبية بنجاح عبر Resend');
+      if (r.sent) toast.success('أُرسلت الرسالة التجريبية بنجاح عبر Google Apps Script');
+      else if (r.skipped === 'daily_limit') toast.error('تم بلوغ الحد اليومي للإرسال — ستُرسل الرسالة تلقائيًا لاحقًا');
       else toast.error('لم تُرسل — راجع سجل البريد أدناه لمعرفة السبب');
       reloadEmail();
     } catch (e) {
       toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runCheck = async () => {
+    setBusy(true);
+    try {
+      setCheck(await api.post('/email/check'));
+    } catch (e) {
+      setCheck({ ok: false, error: e.message });
     } finally {
       setBusy(false);
     }
@@ -142,8 +154,8 @@ function Integrations() {
     <div className="stack" style={{ maxWidth: 1000 }}>
       <div className="card">
         <div className="card-head">
-          <h2><Icon name="mail" size={17} /> البريد الإلكتروني (Resend)</h2>
-          {cfg && (cfg.operational ? <Badge tone="success">يعمل</Badge> : <Badge tone="danger">غير مُفعّل</Badge>)}
+          <h2><Icon name="mail" size={17} /> البريد الإلكتروني (Google Apps Script)</h2>
+          {cfg && (cfg.operational ? <Badge tone="success">مفعّل</Badge> : <Badge tone="danger">غير مُفعّل</Badge>)}
         </div>
         {!cfg ? <Spinner /> : (
           <>
@@ -151,15 +163,39 @@ function Integrations() {
               <Alert tone="warn">
                 <b>إرسال البريد غير مُفعّل — كل الإشعارات تظهر داخل المنصة فقط.</b>
                 <ul style={{ margin: '6px 0 0' }}>{cfg.problems.map((p) => <li key={p}>{p}</li>)}</ul>
-                <div className="small" style={{ marginTop: 6 }}>خطوات الإعداد في ملف README (قسم «إعداد Resend»): توثيق نطاق في Resend (SPF/DKIM/DMARC) ثم ضبط المتغيرات على Render.</div>
+                <div className="small" style={{ marginTop: 6 }}>خطوات الإعداد بالتفصيل في الملف <b dir="ltr">GOOGLE_EMAIL_SETUP.txt</b> في جذر المشروع: نشر كود Apps Script من حساب الملتقى ثم ضبط GAS_WEB_APP_URL و GAS_SHARED_SECRET على Render.</div>
               </Alert>
             ) : (
-              <p className="small muted">المرسل: <span dir="ltr">{cfg.from}</span> • الرد إلى: <span dir="ltr">{cfg.reply_to}</span></p>
+              <div className="email-meta small">
+                <span>المرسل: <b>{cfg.sender_name}</b> <span dir="ltr">&lt;{cfg.sender}&gt;</span></span>
+                <span>الرد إلى: <span dir="ltr">{cfg.reply_to}</span></span>
+                {email.usage && (
+                  <span>
+                    المُرسَل خلال 24 ساعة: <b className="num">{email.usage.sent_24h} / {email.usage.limit}</b>
+                    {email.usage.sent_24h >= email.usage.limit && <> <Badge tone="warn">بلغ الحد — الباقي مؤجل تلقائيًا</Badge></>}
+                  </span>
+                )}
+              </div>
+            )}
+            {cfg.operational && (
+              <div className="row" style={{ margin: '10px 0', gap: 8 }}>
+                <button className="btn btn-ghost" type="button" onClick={runCheck} disabled={busy}><Icon name="refresh" size={16} /> فحص الاتصال</button>
+                {check && (check.ok ? (
+                  <span className="small">
+                    <Badge tone={check.sender_matches ? 'success' : 'warn'}>متصل</Badge>{' '}
+                    الحساب المُرسِل: <b dir="ltr">{check.account || 'غير معروف'}</b> • الحصة المتبقية اليوم (MailApp): <b className="num">{check.remaining ?? '—'}</b>
+                    {!check.sender_matches && <div style={{ color: 'var(--warn, #b7791f)' }}>تنبيه: Apps Script منشور من حساب غير {check.expected_sender} — أعد النشر من حساب الملتقى الرسمي.</div>}
+                  </span>
+                ) : (
+                  <span className="small" style={{ color: 'var(--danger)' }}>فشل الفحص: {check.error}</span>
+                ))}
+              </div>
             )}
             <div className="row" style={{ margin: '10px 0' }}>
               <input className="input ltr" style={{ maxWidth: 300 }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} aria-label="بريد الاختبار" />
               <button className="btn btn-secondary" type="button" onClick={sendTest} disabled={busy || !cfg.operational}>{busy ? 'جارٍ الإرسال…' : 'إرسال رسالة تجريبية'}</button>
             </div>
+            <p className="small muted" style={{ marginTop: -4 }}>الرسالة التجريبية تُرسل فقط لحساب الملتقى الرسمي أو لبريد مؤكد لمستخدم في المنصة.</p>
             <div className="row small" style={{ marginBottom: 8 }}>
               {Object.entries(EMAIL_STATUS).map(([k, v]) => (
                 <button key={k} type="button" className={`btn btn-sm ${emailFilter === k ? '' : 'btn-ghost'}`} onClick={() => setEmailFilter(emailFilter === k ? '' : k)}>
@@ -178,7 +214,7 @@ function Integrations() {
                       <td><Badge tone={EMAIL_STATUS[e.status].tone}>{EMAIL_STATUS[e.status].label}</Badge>{e.last_error && <div className="muted">{e.last_error.slice(0, 120)}</div>}</td>
                       <td className="num">{e.attempts}</td>
                       <td className="nowrap">{fmtDateTime(e.sent_at || e.created_at)}</td>
-                      <td>{e.status === 'failed' && cfg.operational && <button className="btn btn-sm btn-ghost" type="button" onClick={async () => { await api.post(`/email/${e.id}/retry`); toast.success('أُعيدت للمحاولة'); reloadEmail(); }}>إعادة</button>}</td>
+                      <td>{(e.status === 'failed' || e.status === 'disabled') && cfg.operational && <button className="btn btn-sm btn-ghost" type="button" onClick={async () => { await api.post(`/email/${e.id}/retry`); toast.success('أُعيدت للمحاولة'); reloadEmail(); }}>إعادة</button>}</td>
                     </tr>
                   ))}
                 </tbody>

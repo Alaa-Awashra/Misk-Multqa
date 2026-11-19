@@ -44,13 +44,20 @@ export const config = {
   cronSecret: env.CRON_SECRET || '',
   // تشغيل المهام داخل الخادم أيضًا أثناء نشاطه (مساعد فقط — المصدر الموثوق هو Supabase Cron)
   inProcessScheduler: bool(env.IN_PROCESS_SCHEDULER, env.NODE_ENV !== 'test'),
+  // البريد: Google Apps Script Web App (MailApp) من حساب الملتقى الرسمي
   email: {
     enabled: bool(env.EMAIL_NOTIFICATIONS_ENABLED, false),
-    resendApiKey: env.RESEND_API_KEY || '',
-    from: env.EMAIL_FROM || '',
+    provider: (env.EMAIL_PROVIDER || 'google_apps_script').trim(),
+    gasUrl: (env.GAS_WEB_APP_URL || '').trim(),
+    gasSecret: (env.GAS_SHARED_SECRET || '').trim(),
+    // الحساب الذي يُنشر منه Apps Script (للعرض والتحقق فقط — الإرسال يتم من حساب النشر نفسه)
+    senderAddress: (env.EMAIL_SENDER_ADDRESS || 'misk.quran26@gmail.com').trim().toLowerCase(),
     replyTo: env.EMAIL_REPLY_TO || 'misk.quran26@gmail.com',
     fromName: 'إدارة ملتقى المسك القرآني',
-    apiBase: env.RESEND_API_BASE || 'https://api.resend.com',
+    // حساب Gmail الشخصي: 100 مستلم يوميًا عبر MailApp — نترك هامشًا للرسائل التجريبية
+    dailyLimit: Math.max(1, Math.min(100, Number(env.EMAIL_DAILY_LIMIT) || 90)),
+    // مهلة بين رسالة وأخرى لتجنب نمط الإرسال الجماعي
+    sendIntervalMs: /^\d+$/.test(String(env.EMAIL_SEND_INTERVAL_MS ?? '').trim()) ? Number(env.EMAIL_SEND_INTERVAL_MS) : 3000,
   },
   google: {
     clientId: env.GOOGLE_CLIENT_ID || '',

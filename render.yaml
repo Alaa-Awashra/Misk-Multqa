@@ -28,15 +28,19 @@ services:
       # المهام المجدولة: انسخ القيمة المولّدة إلى database/supabase_cron.sql
       - key: CRON_SECRET
         generateValue: true
-      # البريد (Resend) — يبقى معطّلًا حتى توثيق النطاق
+      # البريد عبر Google Apps Script (MailApp) من misk.quran26@gmail.com — انظر GOOGLE_EMAIL_SETUP.txt
+      - key: EMAIL_PROVIDER
+        value: google_apps_script
       - key: EMAIL_NOTIFICATIONS_ENABLED
-        value: "false"
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM
-        sync: false          # مثال: noreply@your-verified-domain.com
+        value: "false"       # اجعله true بعد نشر Apps Script وضبط المتغيرين التاليين
+      - key: GAS_WEB_APP_URL
+        sync: false          # رابط النشر: https://script.google.com/macros/s/…/exec
+      - key: GAS_SHARED_SECRET
+        sync: false          # سر عشوائي 32+ حرفًا — نفس القيمة في Script Properties
       - key: EMAIL_REPLY_TO
         value: misk.quran26@gmail.com
+      - key: EMAIL_DAILY_LIMIT
+        value: "90"          # حد Gmail الشخصي 100 مستلم يوميًا — نترك هامشًا
       # Google Forms / Sheets
       - key: GOOGLE_CLIENT_ID
         sync: false

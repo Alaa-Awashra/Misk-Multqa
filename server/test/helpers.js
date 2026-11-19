@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { startFakeAppsScript } from './fakeAppsScript.js';
+
+export const GAS_TEST_SECRET = 'gas-test-secret-0123456789-abcdefghijklmnop';
 
 let ctx = null;
 
@@ -32,6 +35,9 @@ export async function setup() {
     url = `postgresql://postgres:test@localhost:${port}/postgres`;
   }
 
+  // Apps Script وهمي يشغّل google-apps-script/Code.gs الحقيقي
+  const gas = await startFakeAppsScript({ secret: GAS_TEST_SECRET });
+
   // يجب ضبط البيئة قبل تحميل أي وحدة من الخادم (config.js يقرأها عند التحميل)
   Object.assign(process.env, {
     NODE_ENV: 'test',
@@ -45,8 +51,11 @@ export async function setup() {
     CRON_SECRET: 'cron-secret-for-tests-0123456789',
     IN_PROCESS_SCHEDULER: 'false',
     EMAIL_NOTIFICATIONS_ENABLED: 'true',
-    RESEND_API_KEY: 're_test_key',
-    EMAIL_FROM: 'noreply@example-forum.org',
+    EMAIL_PROVIDER: 'google_apps_script',
+    GAS_WEB_APP_URL: gas.url,
+    GAS_SHARED_SECRET: GAS_TEST_SECRET,
+    EMAIL_SEND_INTERVAL_MS: '0',
+    EMAIL_DAILY_LIMIT: '100',
     EMAIL_REPLY_TO: 'misk.quran26@gmail.com',
     GOOGLE_CLIENT_ID: 'test-client',
     GOOGLE_CLIENT_SECRET: 'test-secret',
@@ -86,7 +95,9 @@ export async function setup() {
     pool,
     mail,
     outbox,
+    gas,
     async stop() {
+      await gas.close();
       await outbox.outboxIdle();
       await new Promise((r) => server.close(r));
       await pool.end();

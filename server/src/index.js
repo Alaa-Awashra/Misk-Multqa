@@ -3,7 +3,7 @@ import { pool } from './db.js';
 import { app } from './app.js';
 import { seedAdmin } from './services/seed.js';
 import { startInProcessScheduler, stopInProcessScheduler } from './services/jobs.js';
-import { emailConfigStatus } from './services/email/resend.js';
+import { emailConfigStatus } from './services/email/appsScript.js';
 import { outboxIdle } from './services/email/outbox.js';
 
 async function start() {
