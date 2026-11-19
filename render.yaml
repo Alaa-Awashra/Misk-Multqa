@@ -1,7 +1,7 @@
 # Render Blueprint — خدمة واحدة تخدم الـ API والواجهة معًا
 services:
   - type: web
-    name: masak-quran-forum
+    name: Misk-Multqa
     runtime: node
     plan: free
     region: frankfurt
