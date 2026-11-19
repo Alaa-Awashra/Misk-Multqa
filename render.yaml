@@ -5,8 +5,8 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: npm run render-build
-    startCommand: npm start
+    buildCommand: npm install && npm --prefix server install
+    startCommand: node server/src/index.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
