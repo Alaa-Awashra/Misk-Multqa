@@ -5,7 +5,7 @@ import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
 import { useSummary } from '../context/Summary.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Badge, ConfirmDialog, CopyBox, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
+import { Alert, Badge, ConfirmDialog, CopyBox, Dropdown, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
 import { APP_STATUS, supervisorTypeLabel } from '../lib/labels.js';
 import { downloadCsv } from '../lib/csv.js';
 import { fmtDate, fmtDateTime, fmtIso, norm, relativeTime } from '../lib/format.js';
@@ -81,14 +81,12 @@ function ApplicationDetail({ id, onClose, onChanged, supervisors }) {
         onConfirm={async () => { await api.post(`/admissions/applications/${id}/accept`, { supervisor_id: sup, gender: g || undefined, note: text || undefined }); after('قُبل الطالب وأُضيف إلى المشرف'); }}>
         <p>سيُنشأ سجل الطالب بنفس مسار إضافة الطلاب، ويُبلَّغ المشرف{a?.email ? '، ويُرسل بريد القبول للمتقدم' : ''}.</p>
         {!a?.gender && (
-          <Field label="الجنس" required>{(fid) => <select id={fid} className="select" value={gender} onChange={(e) => { setGender(e.target.value); setSup(''); }}><option value="">— اختر —</option><option value="male">ذكر</option><option value="female">أنثى</option></select>}</Field>
+          <Field label="الجنس" required>{(fid) => <Dropdown block id={fid} required value={gender} onChange={(v) => { setGender(v); setSup(''); }} options={[{ value: '', label: '— اختر —' }, { value: 'male', label: 'ذكر' }, { value: 'female', label: 'أنثى' }]} />}</Field>
         )}
         <Field label="المشرف / الحلقة" required hint="تظهر فقط الحلقات المتوافقة مع جنس الطالب">
           {(fid) => (
-            <select id={fid} className="select" value={sup} onChange={(e) => setSup(e.target.value)}>
-              <option value="">— اختر —</option>
-              {options.map((s) => <option key={s.id} value={s.id}>{s.full_name} — {supervisorTypeLabel(s.supervisor_type)} ({s.students} طالب)</option>)}
-            </select>
+            <Dropdown block id={fid} value={sup} onChange={setSup}
+              options={[{ value: '', label: '— اختر —' }, ...options.map((s) => ({ value: s.id, label: `${s.full_name} — ${supervisorTypeLabel(s.supervisor_type)}`, hint: `${s.students} طالب` }))]} />
           )}
         </Field>
         <Field label="ملاحظة (اختياري)">{(fid) => <input id={fid} className="input" value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} />}</Field>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, qs } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
-import { Alert, Badge, ConfirmDialog, Field, Icon, Modal } from './ui.jsx';
+import { Alert, Badge, ConfirmDialog, Dropdown, Field, Icon, Modal } from './ui.jsx';
 import { SURAHS } from '../lib/surahs.js';
 import { APPT_STATUS, KIND_LABEL, RECITATION_TYPE_LABEL } from '../lib/labels.js';
 import { fmtDate, fmtTime, fmtWeekday, localHM, localISODate, norm, toISO } from '../lib/format.js';
@@ -75,6 +75,7 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
   }, [open, appointment]);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const setV = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
   const [pick, setPick] = useState('');
   const multi = !editing && !f.past;
   const toggleStudent = (id) =>
@@ -208,14 +209,8 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
         ) : (
           <Field label={n.the} required>
             {(id) => (
-              <select id={id} className="select" value={f.student_id || ''} onChange={set('student_id')} disabled={editing} required>
-                <option value="">— اختر —</option>
-                {(editing ? students : activeStudents).map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.full_name}
-                  </option>
-                ))}
-              </select>
+              <Dropdown block id={id} required disabled={editing} value={f.student_id || ''} onChange={setV('student_id')}
+                options={[{ value: '', label: '— اختر —' }, ...(editing ? students : activeStudents).map((st) => ({ value: st.id, label: st.full_name }))]} />
             )}
           </Field>
         )}
@@ -236,26 +231,15 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
           {f.kind === 'recitation' && (
             <Field label="نوع التسميع">
               {(id) => (
-                <select id={id} className="select" value={f.recitation_type} onChange={set('recitation_type')}>
-                  {Object.entries(RECITATION_TYPE_LABEL).map(([k, l]) => (
-                    <option key={k} value={k}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown block id={id} value={f.recitation_type} onChange={setV('recitation_type')}
+                  options={Object.entries(RECITATION_TYPE_LABEL).map(([k, l]) => ({ value: k, label: l }))} />
               )}
             </Field>
           )}
           <Field label="السورة" required={f.kind === 'exam'}>
             {(id) => (
-              <select id={id} className="select" value={f.surah} onChange={set('surah')}>
-                <option value="">{f.kind === 'exam' ? '— اختر السورة —' : '— غير محددة —'}</option>
-                {SURAHS.map((s, i) => (
-                  <option key={s} value={s}>
-                    {i + 1}. {s}
-                  </option>
-                ))}
-              </select>
+              <Dropdown block id={id} value={f.surah} onChange={setV('surah')} searchable
+                options={[{ value: '', label: f.kind === 'exam' ? '— اختر السورة —' : '— غير محددة —' }, ...SURAHS.map((s, i) => ({ value: s, label: `${i + 1}. ${s}` }))]} />
             )}
           </Field>
           <Field label="المقطع / الصفحات (اختياري)" className={f.kind === 'exam' ? '' : ''}>
@@ -286,12 +270,8 @@ export function AppointmentForm({ open, onClose, onSaved, students = [], appoint
             <>
               <Field label="التكرار">
                 {(id) => (
-                  <select id={id} className="select" value={f.recur} onChange={set('recur')}>
-                    <option value="none">بدون تكرار</option>
-                    <option value="daily">يوميًا</option>
-                    <option value="weekly">أسبوعيًا</option>
-                    <option value="biweekly">كل أسبوعين</option>
-                  </select>
+                  <Dropdown block id={id} value={f.recur} onChange={setV('recur')}
+                    options={[{ value: 'none', label: 'بدون تكرار' }, { value: 'daily', label: 'يوميًا' }, { value: 'weekly', label: 'أسبوعيًا' }, { value: 'biweekly', label: 'كل أسبوعين' }]} />
                 )}
               </Field>
               {f.recur !== 'none' && (

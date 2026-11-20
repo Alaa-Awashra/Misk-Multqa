@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Avatar, Badge, ConfirmDialog, Empty, Field, Icon, PageHeader, ProgressBar, Spinner, StatCard, Tabs } from '../components/ui.jsx';
+import { Alert, Avatar, Badge, ConfirmDialog, Dropdown, Empty, Field, Icon, PageHeader, ProgressBar, Spinner, StatCard, Tabs } from '../components/ui.jsx';
 import StudentForm from '../components/StudentForm.jsx';
 import { AppointmentDetail, AppointmentForm } from '../components/Appointments.jsx';
 import { ACTION_LABEL, APPT_STATUS, KIND_LABEL, RECITATION_TYPE_LABEL, REQUEST_KIND, REQUEST_STATUS, actionTone, genderLabel, supervisorTypeLabel } from '../lib/labels.js';
@@ -361,12 +361,8 @@ export default function StudentDetail() {
         <p>ستُلغى مواعيده القادمة مع المشرف الحالي. يجب أن يتوافق جنس الطالب مع نوع المشرف.</p>
         <Field label="المشرف الجديد" required>
           {(fid) => (
-            <select id={fid} className="select" value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">— اختر —</option>
-              {(sups?.supervisors || []).filter((x) => x.status === 'active' && x.id !== s.supervisor_id).map((x) => (
-                <option key={x.id} value={x.id}>{x.full_name} ({supervisorTypeLabel(x.supervisor_type)})</option>
-              ))}
-            </select>
+            <Dropdown block id={fid} value={target} onChange={setTarget}
+              options={[{ value: '', label: '— اختر —' }, ...(sups?.supervisors || []).filter((x) => x.status === 'active' && x.id !== s.supervisor_id).map((x) => ({ value: x.id, label: x.full_name, hint: supervisorTypeLabel(x.supervisor_type) }))]} />
           )}
         </Field>
       </ConfirmDialog>

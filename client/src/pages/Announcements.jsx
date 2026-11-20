@@ -4,7 +4,7 @@ import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
 import { useSummary } from '../context/Summary.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Badge, ConfirmDialog, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
+import { Alert, Badge, ConfirmDialog, Dropdown, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
 import { ANN_AUDIENCE, ANN_CATEGORY, EMAIL_STATUS } from '../lib/labels.js';
 import { fmtDateTime, localHM, localISODate, norm, toISO } from '../lib/format.js';
 
@@ -59,6 +59,7 @@ function AnnouncementForm({ open, initial, onClose, onSaved }) {
     }
   };
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const setV = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
 
   return (
     <Modal open={open} onClose={onClose} title={initial ? 'تعديل الإعلان' : 'إعلان جديد'} persistent={busy} size="lg"
@@ -68,10 +69,10 @@ function AnnouncementForm({ open, initial, onClose, onSaved }) {
         <div className="form-grid">
           <Field label="العنوان" required className="full">{(id) => <input id={id} className="input" value={f.title} onChange={set('title')} required maxLength={200} />}</Field>
           <Field label="التصنيف" required>
-            {(id) => <select id={id} className="select" value={f.category} onChange={set('category')}>{Object.entries(ANN_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>}
+            {(id) => <Dropdown block id={id} value={f.category} onChange={setV('category')} options={Object.entries(ANN_CATEGORY).map(([k, v]) => ({ value: k, label: v.label }))} />}
           </Field>
           <Field label="موجّه إلى" required hint="لا يملك الطلاب حسابات في المنصة، فالإعلانات للطاقم فقط">
-            {(id) => <select id={id} className="select" value={f.audience} onChange={set('audience')}>{Object.entries(ANN_AUDIENCE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}
+            {(id) => <Dropdown block id={id} value={f.audience} onChange={setV('audience')} options={Object.entries(ANN_AUDIENCE).map(([k, v]) => ({ value: k, label: v }))} />}
           </Field>
           <Field label="الوصف" required className="full">{(id) => <textarea id={id} className="textarea" style={{ minHeight: 140 }} value={f.body} onChange={set('body')} required maxLength={10000} />}</Field>
           <Field label="تاريخ الحدث (اختياري)">{(id) => <input id={id} type="date" className="input" value={f.event_date} onChange={set('event_date')} />}</Field>

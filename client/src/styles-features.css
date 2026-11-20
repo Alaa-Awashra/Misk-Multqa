@@ -252,3 +252,17 @@ details summary { cursor: pointer; color: var(--primary); }
 /* معلومات المرسل في إعدادات البريد */
 .email-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); }
 .email-meta b { color: var(--text); }
+
+/* Dropdown داخل النماذج والنوافذ المنبثقة: بشكل حقل الإدخال وبعرض كامل */
+.dd-block { width: 100%; }
+.dd-block .dd-btn { width: 100%; min-width: 0; height: auto; min-height: 41px; padding: 8px 12px; font-size: inherit; }
+.dd-block .dd-value { max-width: none; }
+.dd-btn.dd-placeholder .dd-value { color: var(--muted); }
+.dd-btn:disabled { background: #f5f3ec; color: var(--muted); cursor: not-allowed; border-color: #e2ddcf; }
+.dd-btn:disabled .dd-caret { opacity: 0.4; }
+.dd-pop.dd-pop-fixed { position: fixed; z-index: 300; min-width: 0; max-width: none; top: auto; right: auto; bottom: auto; inset-inline-start: auto; }
+.dd-pop.dd-up { transform-origin: bottom; }
+.dd-pop-fixed .dd-label { white-space: normal; line-height: 1.5; }
+.dd-list li.dd-none:not(.sel) { color: var(--muted); }
+.dd-req { position: absolute; bottom: 0; inset-inline-start: 50%; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+@media (max-width: 640px) { .dd-block { flex: none; } }

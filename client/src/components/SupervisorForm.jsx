@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../context/Toast.jsx';
-import { Alert, Field, Modal } from './ui.jsx';
+import { Alert, Dropdown, Field, Modal } from './ui.jsx';
 import { SUPERVISOR_TYPES } from '../lib/labels.js';
 
 const EMPTY = {
@@ -40,6 +40,7 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
   const isRegistrar = !editing && f.supervisor_type === 'registrar';
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const setV = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -94,15 +95,8 @@ export default function SupervisorForm({ open, onClose, onSaved, supervisor }) {
             className="full"
           >
             {(id) => (
-              <select id={id} className="select" value={f.supervisor_type} onChange={set('supervisor_type')} required>
-                <option value="">— اختر —</option>
-                {SUPERVISOR_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-                {!editing && <option value="registrar">مشرف تسجيل وقبول</option>}
-              </select>
+              <Dropdown block id={id} required value={f.supervisor_type} onChange={setV('supervisor_type')}
+                options={[{ value: '', label: '— اختر —' }, ...SUPERVISOR_TYPES, ...(!editing ? [{ value: 'registrar', label: 'مشرف تسجيل وقبول' }] : [])]} />
             )}
           </Field>
           <Field label="رقم الهاتف">

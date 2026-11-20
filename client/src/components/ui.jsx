@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { norm } from '../lib/format.js';
 
 // ---------------------------------------------------------------- الأيقونات
 const ICONS = {
@@ -445,23 +447,44 @@ export function CountBadge({ n }) {
   return <span className="count-badge">{n > 99 ? '99+' : n}</span>;
 }
 
-// ---------------------------------------------------------------- قائمة منسدلة للفلاتر
-/** بديل مريح لـ <select> في أشرطة الفلترة: options = [{ value, label, hint? }] */
-export function Dropdown({ value, onChange, options, icon, label, searchable = false, size, className = '' }) {
+// ---------------------------------------------------------------- قائمة منسدلة
+/**
+ * بديل مريح لـ <select>: options = [{ value, label, hint? }]
+ * - في أشرطة الفلترة: الافتراضي (يُبرز الزر عند اختيار قيمة غير الأولى).
+ * - داخل النماذج والنوافذ المنبثقة: block — عرض كامل بشكل حقل الإدخال، يدعم id و required
+ *   و disabled، وتُعرض القائمة فوق كل شيء (portal) فلا تُقصّ داخل منطقة التمرير في النافذة.
+ */
+export function Dropdown({
+  value,
+  onChange,
+  options,
+  icon,
+  label,
+  searchable,
+  size,
+  className = '',
+  block = false,
+  id,
+  required = false,
+  disabled = false,
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
   const ref = useRef(null);
+  const btnRef = useRef(null);
   const listRef = useRef(null);
+  const popRef = useRef(null);
   const listId = useId();
+  const canSearch = searchable ?? (block && options.length > 10);
   const current = options.find((o) => o.value === value) || options[0];
-  const shown = searchable && q ? options.filter((o) => String(o.label).includes(q.trim())) : options;
+  const shown = canSearch && q ? options.filter((o) => norm(String(o.label)).includes(norm(q))) : options;
 
   useEffect(() => {
     if (!open) return undefined;
     setQ('');
     setHi(Math.max(0, options.findIndex((o) => o.value === value)));
-    const close = (e) => !ref.current?.contains(e.target) && setOpen(false);
+    const close = (e) => !ref.current?.contains(e.target) && !popRef.current?.contains(e.target) && setOpen(false);
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -470,42 +493,117 @@ export function Dropdown({ value, onChange, options, icon, label, searchable = f
     if (open) listRef.current?.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [hi, open]);
 
-  // إن لم تتسع القائمة باتجاهها الطبيعي (قرب حافة الشاشة) تُحاذى من الطرف الآخر للزر
-  const popRef = useRef(null);
+  // وضع الفلاتر: إن لم تتسع القائمة باتجاهها الطبيعي تُحاذى من الطرف الآخر للزر
   const [flip, setFlip] = useState(false);
   useEffect(() => {
-    if (!open) return setFlip(false);
+    if (!open || block) {
+      setFlip(false);
+      return undefined;
+    }
     const r = popRef.current?.getBoundingClientRect();
     if (r && (r.left < 8 || r.right > window.innerWidth - 8)) setFlip(true);
     return undefined;
-  }, [open]);
+  }, [open, block]);
+
+  // وضع النماذج: موضع ثابت محسوب من الزر، يفتح للأعلى إن لم تكفِ المساحة بالأسفل
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!open || !block) {
+      setPos(null);
+      return undefined;
+    }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const up = below < 240 && above > below;
+      const room = Math.max(140, (up ? above : below) - (canSearch ? 70 : 20));
+      setPos({ left: r.left, width: r.width, up, top: r.bottom + 6, bottom: window.innerHeight - r.top + 6, room });
+    }
+    // التمرير خارج القائمة (مثل تمرير محتوى النافذة) أو تغيير الحجم يغلقها كي لا تنفصل عن الزر
+    const onScroll = (e) => !popRef.current?.contains(e.target) && setOpen(false);
+    const onResize = () => setOpen(false);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, block, canSearch]);
 
   const pick = (o) => {
     onChange(o.value);
     setOpen(false);
+    if (block) btnRef.current?.focus();
   };
   const onKey = (e) => {
+    if (disabled) return;
     if (!open) {
-      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key) && e.target === btnRef.current) {
         e.preventDefault();
         setOpen(true);
       }
       return;
     }
-    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(shown.length - 1, h + 1)); }
+    if (e.key === 'Escape') {
+      // يغلق القائمة فقط، لا النافذة المنبثقة التي تحتويها
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      btnRef.current?.focus();
+    } else if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(shown.length - 1, h + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(0, h - 1)); }
     else if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) pick(shown[hi]); }
     else if (e.key === 'Tab') setOpen(false);
   };
 
-  const active = value !== options[0]?.value;
+  const active = !block && value !== options[0]?.value;
+  const placeholder = block && (value === '' || value == null) && current?.value === '';
+  const pop = open && (!block || pos) && (
+    <div
+      className={`dd-pop${flip ? ' dd-flip' : ''}${block ? ' dd-pop-fixed' : ''}${pos?.up ? ' dd-up' : ''}`}
+      ref={popRef}
+      style={pos ? { left: pos.left, width: pos.width, ...(pos.up ? { bottom: pos.bottom } : { top: pos.top }) } : undefined}
+    >
+      {label && !block && <div className="dd-title">{label}</div>}
+      {canSearch && (
+        <div className="dd-search">
+          <Icon name="search" size={14} />
+          <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} placeholder="بحث…" aria-label="بحث في الخيارات" />
+        </div>
+      )}
+      <ul className="dd-list" role="listbox" id={listId} ref={listRef} style={pos ? { maxHeight: Math.min(280, pos.room) } : undefined}>
+        {shown.length === 0 && <li className="dd-empty">لا نتائج</li>}
+        {shown.map((o, i) => (
+          <li
+            key={o.value}
+            data-i={i}
+            role="option"
+            aria-selected={o.value === value}
+            className={`${o.value === value ? 'sel' : ''}${i === hi ? ' hi' : ''}${o.value === '' && block ? ' dd-none' : ''}`}
+            onMouseEnter={() => setHi(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pick(o)}
+          >
+            <span className="dd-check" aria-hidden="true">{o.value === value && <Icon name="check" size={14} />}</span>
+            <span className="dd-label">{o.label}</span>
+            {o.hint != null && <span className="dd-hint">{o.hint}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   return (
-    <div className={`dd${size === 'sm' ? ' dd-sm' : ''}${open ? ' open' : ''}${className ? ` ${className}` : ''}`} ref={ref} onKeyDown={onKey}>
+    // أحداث لوحة المفاتيح من القائمة (حتى داخل الـ portal) تصل هنا عبر شجرة React
+    <div className={`dd${size === 'sm' ? ' dd-sm' : ''}${block ? ' dd-block' : ''}${open ? ' open' : ''}${className ? ` ${className}` : ''}`} ref={ref} onKeyDown={onKey}>
       <button
+        ref={btnRef}
+        id={id}
         type="button"
-        className={`dd-btn${active ? ' dd-active' : ''}`}
-        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        className={`dd-btn${active ? ' dd-active' : ''}${placeholder ? ' dd-placeholder' : ''}`}
+        onClick={() => { btnRef.current?.focus(); setOpen((o) => !o); }}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
@@ -515,36 +613,11 @@ export function Dropdown({ value, onChange, options, icon, label, searchable = f
         <span className="dd-value">{current?.label}</span>
         <span className="dd-caret" aria-hidden="true"><Icon name="chevron" size={14} /></span>
       </button>
-      {open && (
-        <div className={`dd-pop${flip ? ' dd-flip' : ''}`} ref={popRef}>
-          {label && <div className="dd-title">{label}</div>}
-          {searchable && (
-            <div className="dd-search">
-              <Icon name="search" size={14} />
-              <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} placeholder="بحث…" aria-label="بحث في الخيارات" />
-            </div>
-          )}
-          <ul className="dd-list" role="listbox" id={listId} ref={listRef}>
-            {shown.length === 0 && <li className="dd-empty">لا نتائج</li>}
-            {shown.map((o, i) => (
-              <li
-                key={o.value}
-                data-i={i}
-                role="option"
-                aria-selected={o.value === value}
-                className={`${o.value === value ? 'sel' : ''}${i === hi ? ' hi' : ''}`}
-                onMouseEnter={() => setHi(i)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(o)}
-              >
-                <span className="dd-check" aria-hidden="true">{o.value === value && <Icon name="check" size={14} />}</span>
-                <span className="dd-label">{o.label}</span>
-                {o.hint != null && <span className="dd-hint">{o.hint}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {required && (
+        // حقل خفي يُبقي تحقق المتصفح الأصلي (required) كما كان مع <select>
+        <input className="dd-req" tabIndex={-1} aria-hidden="true" required value={value ?? ''} onChange={() => {}} />
       )}
+      {block ? pop && createPortal(pop, document.body) : pop}
     </div>
   );
 }

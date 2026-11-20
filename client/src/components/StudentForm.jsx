@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../context/Auth.jsx';
 import { useToast } from '../context/Toast.jsx';
-import { Alert, Field, Modal } from './ui.jsx';
+import { Alert, Dropdown, Field, Modal } from './ui.jsx';
 import { genderLabel, supervisorTypeLabel } from '../lib/labels.js';
 
 const EMPTY = {
@@ -45,6 +45,7 @@ export default function StudentForm({ open, onClose, onSaved, student, superviso
   }, [open, student]);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const setV = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
 
   const supType = isAdmin
     ? supervisors.find((s) => s.id === f.supervisor_id)?.supervisor_type || student?.supervisor_type
@@ -106,16 +107,8 @@ export default function StudentForm({ open, onClose, onSaved, student, superviso
           {isAdmin && !editing && (
             <Field label="المشرف المسؤول" required className="full">
               {(id) => (
-                <select id={id} className="select" value={f.supervisor_id} onChange={set('supervisor_id')} required>
-                  <option value="">— اختر المشرف —</option>
-                  {supervisors
-                    .filter((s) => s.status === 'active')
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name} ({supervisorTypeLabel(s.supervisor_type)})
-                      </option>
-                    ))}
-                </select>
+                <Dropdown block id={id} required value={f.supervisor_id} onChange={setV('supervisor_id')}
+                  options={[{ value: '', label: '— اختر المشرف —' }, ...supervisors.filter((s) => s.status === 'active').map((s) => ({ value: s.id, label: s.full_name, hint: supervisorTypeLabel(s.supervisor_type) }))]} />
               )}
             </Field>
           )}
@@ -127,11 +120,8 @@ export default function StudentForm({ open, onClose, onSaved, student, superviso
               genderFixed ? (
                 <input id={id} className="input" value={genderLabel(genderFixed)} disabled />
               ) : (
-                <select id={id} className="select" value={f.gender} onChange={set('gender')} required>
-                  <option value="">— اختر —</option>
-                  <option value="male">ذكر</option>
-                  <option value="female">أنثى</option>
-                </select>
+                <Dropdown block id={id} required value={f.gender} onChange={setV('gender')}
+                  options={[{ value: '', label: '— اختر —' }, { value: 'male', label: 'ذكر' }, { value: 'female', label: 'أنثى' }]} />
               )
             }
           </Field>

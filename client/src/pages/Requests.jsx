@@ -56,7 +56,7 @@ export default function Requests() {
           onChange={setTab}
           tabs={[
             { value: 'pending', label: 'بانتظار القرار', count: pending },
-            { value: 'decided', label: 'تم البت فيها' },
+            { value: 'decided', label: 'تم النظر فيها' },
             { value: 'all', label: 'الكل' },
           ]}
         />

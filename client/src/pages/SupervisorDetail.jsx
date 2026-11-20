@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useToast } from '../context/Toast.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Avatar, Badge, ConfirmDialog, CopyBox, Empty, Field, Icon, PageHeader, Spinner, StatCard } from '../components/ui.jsx';
+import { Alert, Avatar, Badge, ConfirmDialog, CopyBox, Dropdown, Empty, Field, Icon, PageHeader, Spinner, StatCard } from '../components/ui.jsx';
 import SupervisorForm from '../components/SupervisorForm.jsx';
 import StudentForm from '../components/StudentForm.jsx';
 import { CredentialsDialog } from './Supervisors.jsx';
@@ -336,12 +336,8 @@ export default function SupervisorDetail() {
         {students.length > 0 && (
           <Field label={`نقل طلابه (${students.length}) إلى مشرف آخر`} hint="إن لم تختر مشرفًا سيصبح الطلاب بلا مشرف حتى تنقلهم لاحقًا.">
             {(fid) => (
-              <select id={fid} className="select" value={transferTo} onChange={(e) => setTransferTo(e.target.value)}>
-                <option value="">— بدون نقل (طلاب بلا مشرف) —</option>
-                {others.map((o) => (
-                  <option key={o.id} value={o.id}>{o.full_name} ({supervisorTypeLabel(o.supervisor_type)})</option>
-                ))}
-              </select>
+              <Dropdown block id={fid} value={transferTo} onChange={setTransferTo}
+                options={[{ value: '', label: '— بدون نقل (طلاب بلا مشرف) —' }, ...others.map((o) => ({ value: o.id, label: o.full_name, hint: supervisorTypeLabel(o.supervisor_type) }))]} />
             )}
           </Field>
         )}

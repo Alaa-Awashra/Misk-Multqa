@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useToast } from '../context/Toast.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { Alert, Badge, ConfirmDialog, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
+import { Alert, Badge, ConfirmDialog, Dropdown, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs } from '../components/ui.jsx';
 import { REVIEW_ACTION, REVIEW_STATUS, MissingItems } from '../components/Compliance.jsx';
 import { fmtDate, fmtDateTime } from '../lib/format.js';
 
@@ -207,18 +207,14 @@ export default function Compliance() {
             <div className="form-grid">
               <Field label="النوع" required>
                 {(id) => (
-                  <select id={id} className="select" value={exForm.kind} onChange={(e) => setExForm({ ...exForm, kind: e.target.value })}>
-                    <option value="leave">إجازة معتمدة لمشرف</option>
-                    <option value="exempt">فترة معفاة</option>
-                  </select>
+                  <Dropdown block id={id} value={exForm.kind} onChange={(v) => setExForm({ ...exForm, kind: v })}
+                    options={[{ value: 'leave', label: 'إجازة معتمدة لمشرف' }, { value: 'exempt', label: 'فترة معفاة' }]} />
                 )}
               </Field>
               <Field label="المشرف" required={exForm.kind === 'leave'} hint={exForm.kind === 'exempt' ? 'اتركه فارغًا ليشمل كل المشرفين' : undefined}>
                 {(id) => (
-                  <select id={id} className="select" value={exForm.supervisor_id} onChange={(e) => setExForm({ ...exForm, supervisor_id: e.target.value })} required={exForm.kind === 'leave'}>
-                    <option value="">{exForm.kind === 'exempt' ? 'كل المشرفين' : '— اختر —'}</option>
-                    {supervisors.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-                  </select>
+                  <Dropdown block id={id} required={exForm.kind === 'leave'} value={exForm.supervisor_id} onChange={(v) => setExForm({ ...exForm, supervisor_id: v })}
+                    options={[{ value: '', label: exForm.kind === 'exempt' ? 'كل المشرفين' : '— اختر —' }, ...supervisors.map((s) => ({ value: s.id, label: s.full_name }))]} />
                 )}
               </Field>
               <Field label="من تاريخ" required>{(id) => <input id={id} type="date" className="input" value={exForm.start_date} onChange={(e) => setExForm({ ...exForm, start_date: e.target.value })} required />}</Field>

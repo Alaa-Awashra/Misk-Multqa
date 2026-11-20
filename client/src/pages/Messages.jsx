@@ -283,9 +283,7 @@ export default function Messages() {
             <Field label="الموضوع" required>{(fid) => <input id={fid} className="input" value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} required maxLength={150} />}</Field>
             <Field label="النوع">
               {(fid) => (
-                <select id={fid} className="select" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
-                  {Object.entries(CONV_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                <Dropdown block id={fid} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={Object.entries(CONV_CATEGORY).map(([k, v]) => ({ value: k, label: v }))} />
               )}
             </Field>
             <Field label="الرسالة" required className="full">{(fid) => <textarea id={fid} className="textarea" style={{ minHeight: 120 }} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} required maxLength={5000} />}</Field>
