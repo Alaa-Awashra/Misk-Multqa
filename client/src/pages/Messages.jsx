@@ -67,22 +67,34 @@ function Thread({ id, onChanged }) {
     load(true);
   }, [id, load]);
   usePoll(useCallback(() => load(false), [load]), POLL_THREAD);
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [messages.length]);
+  // مهم: جسم الـ effect بين أقواس — لا يجوز أن يُعيد قيمة. المتصفحات الحديثة (Chrome/Edge)
+  // تجعل scrollIntoView تُعيد Promise، وكان React يعامله كدالة تنظيف ويستدعيه عند
+  // تغيّر عدد الرسائل بعد الإرسال ← «n is not a function» وصفحة بيضاء.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length]);
 
+  const sendingRef = useRef(false); // يمنع الإرسال المزدوج (Enter السريع أو نقرتان) قبل أن يُعاد الرسم
   const send = async (e) => {
-    e.preventDefault();
-    if (!body.trim()) return;
+    e?.preventDefault();
+    const text = body.trim();
+    if (!text || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const r = await api.post(`/messages/conversations/${id}/messages`, { body });
-      setMessages((m) => [...m, r.message]);
-      lastId.current = r.message.id;
+      if (r?.message) {
+        // عرض الرسالة فورًا دون انتظار الاستطلاع، مع تجنّب التكرار إن وصلت من الاستطلاع أولًا
+        setMessages((m) => (m.some((x) => x.id === r.message.id) ? m : [...m, r.message]));
+        lastId.current = Math.max(lastId.current, r.message.id);
+      }
       setBody('');
       onChanged();
       load(false);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.message || 'تعذّر إرسال الرسالة'); // يبقى النص في الحقل لإعادة المحاولة
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };

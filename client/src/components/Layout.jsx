@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import ErrorBoundary from './ErrorBoundary.jsx';
 import { useAuth } from '../context/Auth.jsx';
 import { useSummary } from '../context/Summary.jsx';
 import { api } from '../api.js';
@@ -178,7 +179,9 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
 
   // روابط مفردة + مجموعات قابلة للطي ({ group, label, icon, items })
   const links = isAdmin
@@ -310,7 +313,9 @@ export default function Layout() {
               <Link to="/profile">{user.email ? 'تأكيد البريد' : 'إضافة البريد'}</Link>
             </div>
           )}
-          <Outlet />
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

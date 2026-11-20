@@ -186,21 +186,29 @@ export function Field({ label, hint, error, required, children, className = '' }
 // ---------------------------------------------------------------- نافذة منبثقة
 export function Modal({ open, onClose, title, children, footer, size = 'md', persistent = false }) {
   const ref = useRef(null);
+  // نحفظ onClose في ref: الصفحات تمرّر دالة جديدة في كل render، ولو وُضعت في
+  // اعتماديات الـ effect لأُعيد تشغيله مع كل حرف يُكتب وسُحب التركيز من الحقل.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e) => {
-      if (e.key === 'Escape' && !persistent) onClose?.();
+      if (e.key === 'Escape' && !persistent) closeRef.current?.();
     };
     document.addEventListener('keydown', onKey);
-    ref.current?.focus();
     return () => {
       document.body.style.overflow = prev;
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, persistent, onClose]);
+  }, [open, persistent]);
+
+  // التركيز على النافذة مرة واحدة فقط عند فتحها، وليس عند كل تحديث.
+  useEffect(() => {
+    if (open && ref.current && !ref.current.contains(document.activeElement)) ref.current.focus();
+  }, [open]);
 
   if (!open) return null;
   return (

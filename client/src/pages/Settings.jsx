@@ -15,7 +15,9 @@ function GeneralSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => setF(settings), [settings]);
+  useEffect(() => {
+    setF(settings);
+  }, [settings]);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const save = async (e) => {
