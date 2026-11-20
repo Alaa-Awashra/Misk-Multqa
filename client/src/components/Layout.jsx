@@ -294,7 +294,8 @@ export default function Layout() {
           <div className="user">
             <div className="user-info">
               <b>{user.full_name}</b>
-              <span className="muted small">{roleLabel(user)}</span>
+              {/* لا نكرر الدور إن كان مطابقًا للاسم (مثل «المسؤول الإداري») */}
+              {roleLabel(user).trim() !== (user.full_name || '').trim() && <span className="muted small">{roleLabel(user)}</span>}
             </div>
             <Avatar name={user.full_name} />
           </div>
