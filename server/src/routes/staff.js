@@ -3,10 +3,10 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query, tx } from '../db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, revokeSessions } from '../middleware/auth.js';
 import { notFound, conflict, uuidParam } from '../utils/errors.js';
 import { parse, z, reqText, optPhone } from '../utils/validate.js';
-import { encrypt, decrypt, generatePassword } from '../utils/crypto.js';
+import { generatePassword } from '../utils/crypto.js';
 import { logActivity } from '../services/activity.js';
 import { assertEmailAvailable, normalizeEmail, setUserEmail, startEmailVerification } from '../services/emailVerification.js';
 
@@ -14,7 +14,7 @@ const router = Router();
 router.use(requireAdmin);
 router.param('id', uuidParam);
 
-const SELECT = `select id, username, full_name, phone, email, email_verified_at, is_active, created_at, password_enc
+const SELECT = `select id, username, full_name, phone, email, email_verified_at, is_active, created_at
                 from users where role = 'registrar'`;
 
 async function load(id) {
@@ -23,7 +23,8 @@ async function load(id) {
   return rows[0];
 }
 
-const shape = ({ password_enc, ...r }) => ({ ...r, password: decrypt(password_enc) });
+// كلمات المرور لا تُسترجع: تظهر للمسؤول مرة واحدة عند الإنشاء أو إعادة التعيين فقط
+const shape = (r) => ({ ...r, password: null });
 
 router.get('/', async (req, res) => {
   const { rows } = await query(`${SELECT} order by full_name`);
@@ -53,9 +54,9 @@ router.post('/', async (req, res) => {
     const username = await uniqueUsername(c);
     const password = generatePassword();
     const { rows } = await c.query(
-      `insert into users (username, password_hash, password_enc, role, full_name, phone, email)
-       values ($1, $2, $3, 'registrar', $4, $5, $6) returning id`,
-      [username, await bcrypt.hash(password, 10), encrypt(password), b.full_name, b.phone ?? null, email]
+      `insert into users (username, password_hash, role, full_name, phone, email)
+       values ($1, $2, 'registrar', $3, $4, $5) returning id`,
+      [username, await bcrypt.hash(password, 10), b.full_name, b.phone ?? null, email]
     );
     await logActivity(c, req.user, 'staff.create', 'staff', rows[0].id, b.full_name, { role: 'registrar' });
     await startEmailVerification(c, rows[0].id);
@@ -91,7 +92,8 @@ router.post('/:id/reset-password', async (req, res) => {
   const u = await load(req.params.id);
   const password = generatePassword();
   await tx(async (c) => {
-    await c.query('update users set password_hash = $1, password_enc = $2 where id = $3', [await bcrypt.hash(password, 10), encrypt(password), u.id]);
+    await c.query('update users set password_hash = $1, password_enc = null where id = $2', [await bcrypt.hash(password, 10), u.id]);
+    await revokeSessions(c, u.id);
     await logActivity(c, req.user, 'staff.reset_password', 'staff', u.id, u.full_name);
   });
   res.json({ username: u.username, password });

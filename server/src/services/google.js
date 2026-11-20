@@ -26,9 +26,12 @@ export const __setGoogleFetch = (fn) => {
 export const googleConfigured = () => !!(config.google.clientId && config.google.clientSecret);
 
 // ---------------------------------------------------------------- OAuth
+// مفتاح مستقل لتوقيع state مشتق من JWT_SECRET: رمز state لا يمكن استخدامه كجلسة والعكس
+const stateKey = () => crypto.createHmac('sha256', config.jwtSecret).update('mq:google-oauth-state:v1').digest();
+
 export function buildAuthUrl(userId) {
   if (!googleConfigured()) throw new HttpError(400, 'GOOGLE_CLIENT_ID و GOOGLE_CLIENT_SECRET غير مضبوطين', 'GOOGLE_NOT_CONFIGURED');
-  const state = jwt.sign({ sub: userId, n: crypto.randomBytes(8).toString('hex'), p: 'google' }, config.jwtSecret, { expiresIn: '10m' });
+  const state = jwt.sign({ sub: userId, n: crypto.randomBytes(16).toString('hex'), p: 'google' }, stateKey(), { expiresIn: '10m', algorithm: 'HS256' });
   const p = new URLSearchParams({
     client_id: config.google.clientId,
     redirect_uri: config.google.redirectUri,
@@ -44,7 +47,7 @@ export function buildAuthUrl(userId) {
 
 export function verifyState(state, userId) {
   try {
-    const s = jwt.verify(state, config.jwtSecret);
+    const s = jwt.verify(state, stateKey(), { algorithms: ['HS256'] });
     return s.p === 'google' && s.sub === userId;
   } catch {
     return false;

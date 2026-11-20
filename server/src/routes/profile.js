@@ -4,7 +4,8 @@ import { query, tx } from '../db.js';
 import { HttpError, badRequest } from '../utils/errors.js';
 import { parse, z, reqText, optText, optDate, optEmail, optPhone } from '../utils/validate.js';
 import { logActivity } from '../services/activity.js';
-import { requireSupervisor } from '../middleware/auth.js';
+import rateLimit from 'express-rate-limit';
+import { requireSupervisor, revokeSessions, signToken, setAuthCookie } from '../middleware/auth.js';
 import { setUserEmail, startEmailVerification } from '../services/emailVerification.js';
 import { supervisorComplianceSummary } from '../services/compliance.js';
 import { getSettings } from '../services/settings.js';
@@ -79,15 +80,31 @@ const passwordSchema = z.object({
     .max(100, 'كلمة المرور طويلة جدًا'),
 });
 
-router.put('/password', async (req, res) => {
+// يحد من تخمين كلمة المرور الحالية عبر جلسة مسروقة
+const passwordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => `pw:${req.user.id}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'محاولات كثيرة لتغيير كلمة المرور. حاول بعد 15 دقيقة.', code: 'RATE_LIMIT' },
+});
+
+router.put('/password', passwordLimiter, async (req, res) => {
   const b = parse(passwordSchema, req.body);
   const { rows } = await query('select password_hash from users where id = $1', [req.user.id]);
   const ok = await bcrypt.compare(b.current_password, rows[0].password_hash);
   if (!ok) throw new HttpError(400, 'كلمة المرور الحالية غير صحيحة');
   const hash = await bcrypt.hash(b.new_password, 10);
   // password_enc = null: لم تعد كلمة المرور معروفة للمسؤول بعد أن غيّرها صاحبها
-  await query('update users set password_hash = $1, password_enc = null where id = $2', [hash, req.user.id]);
-  await logActivity({ query }, req.user, 'profile.password', req.user.role, req.user.supervisor_id || req.user.id, req.user.full_name);
+  const version = await tx(async (c) => {
+    await c.query('update users set password_hash = $1, password_enc = null where id = $2', [hash, req.user.id]);
+    // تُبطل كل الجلسات الأخرى (أجهزة أخرى أو جلسة مسروقة)، وتُجدَّد جلسة هذا الجهاز فقط
+    const v = await revokeSessions(c, req.user.id);
+    await logActivity(c, req.user, 'profile.password', req.user.role, req.user.supervisor_id || req.user.id, req.user.full_name);
+    return v;
+  });
+  setAuthCookie(res, signToken(req.user.id, version));
   res.json({ ok: true });
 });
 

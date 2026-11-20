@@ -28,7 +28,8 @@ function NotificationBell() {
     setOpen(false);
     if (!n.read_at) await api.post(`/notifications/${n.id}/read`).catch(() => {});
     refresh();
-    if (n.link) navigate(n.link);
+    // روابط داخلية فقط (يمنع التحويل لموقع خارجي عبر //host أو /\host)
+    if (typeof n.link === 'string' && /^\/(?![/\\])/.test(n.link)) navigate(n.link);
   };
   const readAll = async () => {
     await api.post('/notifications/read-all').catch(() => {});

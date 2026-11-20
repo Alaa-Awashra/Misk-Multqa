@@ -22,7 +22,7 @@ export function CredentialsDialog({ open, onClose, creds, title = 'بيانات 
         </button>
       }
     >
-      <Alert tone="success">تم الحفظ بنجاح. سلّم هذه البيانات لصاحبها بطريقة آمنة (لا تُرسل كلمات المرور بالبريد). تبقى ظاهرة لك دائمًا في صفحة المشرف ما لم يغيّر كلمة المرور بنفسه.</Alert>
+      <Alert tone="success">تم الحفظ بنجاح. سلّم هذه البيانات لصاحبها بطريقة آمنة (لا تُرسل كلمات المرور بالبريد). انسخها الآن: كلمة المرور تظهر هذه المرة فقط ولا تُحفظ بشكل يمكن استرجاعه (يمكنك توليد كلمة جديدة لاحقًا عند الحاجة).</Alert>
       <div className="stack" style={{ gap: 10 }}>
         <CopyBox label="اسم المستخدم" value={creds.username} />
         <CopyBox label="كلمة المرور" value={creds.password} />

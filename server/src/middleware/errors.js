@@ -30,6 +30,13 @@ export function errorHandler(err, req, res, next) {
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'صيغة البيانات المرسلة غير صحيحة', code: 'BAD_JSON' });
   }
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'حجم البيانات المرسلة كبير جدًا', code: 'PAYLOAD_TOO_LARGE' });
+  }
+  // أخطاء العميل الأخرى من body-parser وغيرها (4xx) — بدون تفاصيل داخلية
+  if (err?.expose && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ error: 'طلب غير صالح', code: 'BAD_REQUEST' });
+  }
 
   console.error('❌ خطأ غير متوقع:', err);
   res.status(500).json({ error: 'حدث خطأ غير متوقع في الخادم', code: 'INTERNAL' });

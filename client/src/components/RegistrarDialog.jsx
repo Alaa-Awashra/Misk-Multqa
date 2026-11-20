@@ -94,7 +94,7 @@ export default function RegistrarDialog({ staff, onClose, onChanged, onCredentia
               {s.phone && <><dt>الهاتف</dt><dd dir="ltr">{s.phone}</dd></>}
               <dt>تاريخ الإنشاء</dt><dd>{fmtDate(s.created_at)}</dd>
             </dl>
-            {s.password && <CopyBox label="كلمة المرور" value={s.password} secret />}
+            <Alert tone="info">كلمة المرور لا تُحفظ بشكل يمكن استرجاعه. إن نُسيت استخدم «إعادة تعيين كلمة المرور» لتوليد كلمة جديدة تظهر مرة واحدة.</Alert>
             <Alert tone="info">صلاحياته: نماذج التسجيل ومراجعة طلبات الالتحاق وقبولها فقط — لا وصول للطلاب أو التحليلات أو المشرفين.</Alert>
             <div className="row" style={{ gap: 8 }}>
               <button className="btn btn-sm btn-ghost" type="button" onClick={() => { setErr(''); setEdit({ full_name: s.full_name, phone: s.phone || '', email: s.email || '' }); }}>

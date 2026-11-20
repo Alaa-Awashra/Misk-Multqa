@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { query, tx } from '../db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, revokeSessions } from '../middleware/auth.js';
 import { HttpError, notFound, conflict, badRequest, uuidParam, isUuid } from '../utils/errors.js';
 import { parse, z, reqText, optText, optDate, optEmail, optPhone } from '../utils/validate.js';
-import { encrypt, decrypt, generatePassword, generateUsername } from '../utils/crypto.js';
+import { generatePassword, generateUsername } from '../utils/crypto.js';
 import { logActivity } from '../services/activity.js';
 import { listStudents, genderAllowed } from '../services/students.js';
 import { localDateStr, monthStart, rangeSql } from '../utils/tz.js';
@@ -84,9 +84,10 @@ router.post('/', async (req, res) => {
     const password = generatePassword();
     const hash = await bcrypt.hash(password, 10);
     const u = await c.query(
-      `insert into users (username, password_hash, password_enc, role, full_name, phone, email)
-       values ($1, $2, $3, 'supervisor', $4, $5, $6) returning id`,
-      [username, hash, encrypt(password), b.full_name, b.phone ?? null, b.email ?? null]
+      // كلمة المرور تُخزَّن كـ bcrypt فقط وتُعرض للمسؤول مرة واحدة في هذه الاستجابة
+      `insert into users (username, password_hash, role, full_name, phone, email)
+       values ($1, $2, 'supervisor', $3, $4, $5) returning id`,
+      [username, hash, b.full_name, b.phone ?? null, b.email ?? null]
     );
     const s = await c.query(
       `insert into supervisors (user_id, supervisor_type, birth_date, address, national_id, qualification, join_date, notes)
@@ -113,8 +114,6 @@ router.post('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   const sup = await getSupervisor(req.params.id);
-  const { rows: cred } = await query('select password_enc from users where id = $1', [sup.user_id]);
-  const password = decrypt(cred[0]?.password_enc);
 
   const students = await listStudents({ supervisorId: sup.id });
 
@@ -148,7 +147,8 @@ router.get('/:id', async (req, res) => {
   res.json({
     supervisor: sup,
     warnings,
-    credentials: { username: sup.username, password, password_known: password !== null },
+    // كلمات المرور لا تُسترجع: تظهر للمسؤول مرة واحدة عند الإنشاء أو إعادة التعيين فقط
+    credentials: { username: sup.username, password: null, password_known: false },
     students,
     month: { from, to, ...perf[0] },
     history,
@@ -197,11 +197,8 @@ router.post('/:id/reset-password', async (req, res) => {
   const password = generatePassword();
   const hash = await bcrypt.hash(password, 10);
   await tx(async (c) => {
-    await c.query('update users set password_hash = $1, password_enc = $2 where id = $3', [
-      hash,
-      encrypt(password),
-      sup.user_id,
-    ]);
+    await c.query('update users set password_hash = $1, password_enc = null where id = $2', [hash, sup.user_id]);
+    await revokeSessions(c, sup.user_id); // تسجيل خروج المشرف من كل الأجهزة
     await logActivity(c, req.user, 'supervisor.reset_password', 'supervisor', sup.id, sup.full_name);
   });
   res.json({ username: sup.username, password });

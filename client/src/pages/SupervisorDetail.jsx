@@ -97,7 +97,7 @@ export default function SupervisorDetail() {
             {credentials.password_known ? (
               <CopyBox label="كلمة المرور" value={credentials.password} secret />
             ) : (
-              <Alert tone="info">غيّر المشرف كلمة مروره بنفسه، لذا لم تعد معروفة لك. يمكنك توليد كلمة جديدة.</Alert>
+              <Alert tone="info">لحماية الحسابات لا تُحفظ كلمات المرور بشكل يمكن استرجاعه. إن نسيها المشرف، ولّد كلمة جديدة تظهر لك مرة واحدة.</Alert>
             )}
             <button
               className="btn btn-ghost btn-sm"
@@ -308,7 +308,7 @@ export default function SupervisorDetail() {
           reload();
         }}
       >
-        ستُلغى كلمة المرور الحالية للمشرف وتُستبدل بكلمة جديدة تُعرض لك مرة واحدة هنا، وتبقى متاحة في صفحته.
+        ستُلغى كلمة المرور الحالية للمشرف وتُستبدل بكلمة جديدة تُعرض لك مرة واحدة هنا فقط (انسخها وسلّمها له)، ويُسجَّل خروجه من كل الأجهزة.
       </ConfirmDialog>
 
       {/* حذف */}

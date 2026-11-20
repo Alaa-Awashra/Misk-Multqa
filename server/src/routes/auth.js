@@ -26,6 +26,18 @@ const loginLimiter = rateLimit({
   message: { error: 'محاولات كثيرة. حاول مرة أخرى بعد 15 دقيقة.', code: 'RATE_LIMIT' },
 });
 
+// حد إضافي لكل حساب (بغض النظر عن عنوان IP): يبطئ تخمين كلمة مرور حساب بعينه من عناوين متعددة.
+// لا يُحتسب الدخول الناجح، والرسالة لا تكشف إن كان الحساب موجودًا.
+const accountLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `acct:${String(req.body?.username ?? '').trim().toLowerCase().slice(0, 100)}`,
+  message: { error: 'محاولات دخول فاشلة كثيرة لهذا الحساب. حاول مرة أخرى بعد 15 دقيقة.', code: 'RATE_LIMIT' },
+});
+
 const verifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
@@ -42,7 +54,7 @@ const loginSchema = z.object({
 // هاش وهمي لتقليل الفارق الزمني عند اسم مستخدم غير موجود
 const DUMMY_HASH = bcrypt.hashSync('dummy-password', 10);
 
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', loginLimiter, accountLoginLimiter, async (req, res) => {
   const { username, password } = parse(loginSchema, req.body);
   const { rows } = await query(
     `select x.*, p.password_hash from (${USER_SQL} where lower(u.username) = lower($1)) x
@@ -54,7 +66,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!user || !ok) throw new HttpError(401, 'اسم المستخدم أو كلمة المرور غير صحيحة', 'BAD_CREDENTIALS');
   const blocked = accessBlockReason(user);
   if (blocked) throw new HttpError(403, blocked, 'SUSPENDED');
-  setAuthCookie(res, signToken(user.id));
+  setAuthCookie(res, signToken(user.id, user.session_version));
   res.json({ user: shapeUser(user) });
 });
 

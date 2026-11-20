@@ -11,6 +11,7 @@ import { config } from './config.js';
 import { query } from './db.js';
 import { authenticate } from './middleware/auth.js';
 import { errorHandler, notFoundApi } from './middleware/errors.js';
+import { csrfOriginCheck, enforceHttps, permissionsPolicy, noStoreApi } from './middleware/security.js';
 
 import authRoutes from './routes/auth.js';
 import cronRoutes from './routes/cron.js';
@@ -39,6 +40,7 @@ const clientDist = path.resolve(here, '../../client/dist');
 export const app = express();
 app.set('trust proxy', 1); // Render يعمل خلف proxy
 app.disable('x-powered-by');
+app.use(enforceHttps);
 
 app.use(
   helmet({
@@ -59,10 +61,13 @@ app.use(
     },
   })
 );
+app.use(permissionsPolicy);
 app.use(compression());
 if (config.clientOrigin) app.use(cors({ origin: config.clientOrigin.split(','), credentials: true }));
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
+// كل مسارات الـ API: لا تخزين مؤقت للبيانات الخاصة + رفض الطلبات المعدِّلة القادمة من مواقع أخرى (CSRF)
+app.use('/api', noStoreApi, csrfOriginCheck);
 
 // ---------------------------------------------------------------- API
 app.get('/api/health', async (req, res) => {
